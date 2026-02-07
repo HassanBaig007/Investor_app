@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { theme, formatCurrency } from '../../components/Theme';
 import { projects, investors, getCurrentUser, pendingModifications } from '../../data/mockData';
 import { getVisibleInvestorData, updatePrivacySettings, PRIVACY_LEVELS } from '../../utils/privacyUtils';
+import NotificationService from '../../services/notificationService';
 
 export default function ManageProjectInvestorsScreen({ navigation, route }) {
     const projectId = route?.params?.projectId || 'PRJ002';
@@ -25,6 +26,8 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
     const [showAddForm, setShowAddForm] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [showPrivacySettings, setShowPrivacySettings] = useState(false);
+    // Force update state to handle mock data mutations
+    const [lastUpdate, setLastUpdate] = useState(Date.now());
 
     // Dynamic current user
     const currentUser = getCurrentUser();
@@ -45,6 +48,7 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
     }
 
     const isAdmin = project.projectAdmins.includes(currentUser.id);
+    const isCreator = project.createdBy === currentUser.id;
     const isUserInvestor = project.projectInvestors.includes(currentUser.id);
 
     // Get investors with privacy filtering applied
@@ -55,19 +59,160 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
     const availableInvestors = investors.filter(i => !project.projectInvestors.includes(i.id));
     const projectModifications = pendingModifications.filter(m => m.projectId === projectId);
 
+    // Ensure pendingInvitations exists
+    if (!project.pendingInvitations) {
+        project.pendingInvitations = [];
+    }
+
+    // Check if a user is already invited
+    const isUserInvited = (userId) => {
+        return project.pendingInvitations.some(inv => inv.userId === userId);
+    };
+
+    // State for selected member options modal
+    const [selectedMember, setSelectedMember] = useState(null);
+    const [showMemberOptions, setShowMemberOptions] = useState(false);
+
+    // Helper: invite member with specific role
+    const inviteMemberWithRole = (investor, role) => {
+        // Check if already invited
+        if (isUserInvited(investor.id)) {
+            Alert.alert('Already Invited', `${investor.name} has already been invited to this project.`);
+            return;
+        }
+
+        if (!project.pendingInvitations) {
+            project.pendingInvitations = [];
+        }
+
+        project.pendingInvitations.push({
+            id: `INV${Date.now()}`,
+            userId: investor.id,
+            role: role,
+            invitedBy: currentUser.id,
+            invitedAt: new Date().toISOString(),
+        });
+
+        setLastUpdate(Date.now()); // Force refresh
+
+        NotificationService.sendLocalNotification(
+            'Invitation Sent',
+            `Invitation sent to ${investor.name}`,
+            { type: 'invitation', projectId: project.id }
+        );
+
+        const roleLabel = role === 'active' ? 'Active Member' : 'Passive Member';
+        Alert.alert(
+            '✅ Invitation Sent',
+            `An invitation has been sent to ${investor.name} to join as a ${roleLabel}.\n\nThey must accept the invitation to join the project.`,
+            [{ text: 'OK' }]
+        );
+        setShowAddForm(false);
+    };
+
+    // Role selection when adding new member
     const handleAddInvestor = (investor) => {
         Alert.alert(
-            'Add Investor',
-            `Add ${investor.name} to ${project.name}?`,
+            '👤 Add Member',
+            `Select role for ${investor.name}:`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
-                    text: 'Add',
+                    text: '👁️ Passive (View Only)',
+                    onPress: () => inviteMemberWithRole(investor, 'passive'),
+                },
+                {
+                    text: '⚡ Active (Full Access)',
+                    onPress: () => inviteMemberWithRole(investor, 'active'),
+                },
+            ]
+        );
+    };
+
+    // Show options when clicking existing member
+    const handleMemberPress = (investor) => {
+        const isCreatorMember = investor.id === project.createdBy;
+        const isSelfMember = investor.id === currentUser.id;
+        const currentRole = project.investorRoles?.[investor.id] || 'active';
+
+        // Creator cannot be modified
+        if (isCreatorMember) {
+            Alert.alert('Project Creator', `${investor.name} is the project creator and cannot be modified.`);
+            return;
+        }
+
+        // Can't modify yourself
+        if (isSelfMember) {
+            Alert.alert('Cannot Modify', 'You cannot change your own role or remove yourself.');
+            return;
+        }
+
+        // Only creator/admin can modify members
+        if (!isCreator && !isAdmin) {
+            return;
+        }
+
+        const roleToggleText = currentRole === 'active'
+            ? '👁️ Make Passive (View Only)'
+            : '⚡ Make Active (Full Access)';
+
+        Alert.alert(
+            `${investor.name}`,
+            `Current Role: ${currentRole === 'active' ? 'Active Member' : 'Passive Member'}`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: roleToggleText,
+                    onPress: () => toggleMemberRole(investor, currentRole),
+                },
+                {
+                    text: '🗑️ Remove from Project',
+                    style: 'destructive',
+                    onPress: () => removeMember(investor),
+                },
+            ]
+        );
+    };
+
+    // Toggle member role
+    const toggleMemberRole = (investor, currentRole) => {
+        const newRole = currentRole === 'active' ? 'passive' : 'active';
+        if (!project.investorRoles) {
+            project.investorRoles = {};
+        }
+        project.investorRoles[investor.id] = newRole;
+        setLastUpdate(Date.now()); // Force refresh
+
+        const roleLabel = newRole === 'active' ? 'Active Member' : 'Passive Member';
+        Alert.alert(
+            '✅ Role Updated',
+            `${investor.name} is now a ${roleLabel}.`,
+            [{ text: 'OK' }]
+        );
+    };
+
+    // Remove member from project
+    const removeMember = (investor) => {
+        Alert.alert(
+            'Remove Member',
+            `Are you sure you want to remove ${investor.name} from this project?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Remove',
+                    style: 'destructive',
                     onPress: () => {
-                        Alert.alert('Success', `${investor.name} has been added to the project.`);
-                        setShowAddForm(false);
-                    }
-                }
+                        const index = project.projectInvestors.indexOf(investor.id);
+                        if (index > -1) {
+                            project.projectInvestors.splice(index, 1);
+                        }
+                        if (project.investorRoles?.[investor.id]) {
+                            delete project.investorRoles[investor.id];
+                        }
+                        setLastUpdate(Date.now()); // Force refresh
+                        Alert.alert('Removed', `${investor.name} has been removed from the project.`);
+                    },
+                },
             ]
         );
     };
@@ -84,13 +229,20 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
     };
 
     // Render investor card with privacy-aware display
-    const renderInvestorCard = (investor, isCreator = false) => {
+    const renderInvestorCard = (investor, isCreatorMember = false) => {
         const isAnonymousInvestor = investor.visibilityLevel === 'anonymous';
         const showFullAsAdmin = investor.visibilityLevel === 'admin' && investor.isAnonymous;
         const isSelf = investor.isSelf;
+        const memberRole = project.investorRoles?.[investor.id] || 'active';
+        const canTapToEdit = (isCreator || isAdmin) && !isCreatorMember && !isSelf;
 
         return (
-            <View key={investor.id} style={styles.investorCard}>
+            <TouchableOpacity
+                key={investor.id}
+                style={styles.investorCard}
+                onPress={() => handleMemberPress(investor)}
+                activeOpacity={canTapToEdit ? 0.7 : 1}
+            >
                 {/* Avatar */}
                 {isAnonymousInvestor ? (
                     <View style={[styles.investorAvatar, styles.anonymousAvatar]}>
@@ -98,7 +250,7 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                     </View>
                 ) : (
                     <LinearGradient
-                        colors={isCreator ? ['#F59E0B', '#D97706'] : isSelf ? ['#10B981', '#059669'] : theme.gradients.primary}
+                        colors={isCreatorMember ? ['#F59E0B', '#D97706'] : isSelf ? ['#10B981', '#059669'] : theme.gradients.primary}
                         style={styles.investorAvatar}
                     >
                         <Text style={styles.investorInitials}>
@@ -123,10 +275,29 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                                 <Text style={styles.selfBadgeText}>You</Text>
                             </View>
                         )}
-                        {isCreator && (
+                        {isCreatorMember && (
                             <View style={styles.creatorBadge}>
                                 <MaterialCommunityIcons name="shield-check" size={10} color={theme.colors.warning} />
                                 <Text style={styles.creatorBadgeText}>Creator</Text>
+                            </View>
+                        )}
+                        {/* Role Badge - Active or Passive */}
+                        {!isCreatorMember && (
+                            <View style={[
+                                styles.roleBadge,
+                                { backgroundColor: memberRole === 'active' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(107, 114, 128, 0.15)' }
+                            ]}>
+                                <MaterialCommunityIcons
+                                    name={memberRole === 'active' ? 'flash' : 'eye'}
+                                    size={10}
+                                    color={memberRole === 'active' ? '#10B981' : '#6B7280'}
+                                />
+                                <Text style={[
+                                    styles.roleBadgeText,
+                                    { color: memberRole === 'active' ? '#10B981' : '#6B7280' }
+                                ]}>
+                                    {memberRole === 'active' ? 'Active' : 'Passive'}
+                                </Text>
                             </View>
                         )}
                         {showFullAsAdmin && (
@@ -141,7 +312,7 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                     </Text>
                 </View>
 
-                {/* Stats */}
+                {/* Stats + Tap indicator */}
                 <View style={styles.investorStats}>
                     {investor.totalInvested !== null ? (
                         <>
@@ -156,8 +327,11 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                             <Text style={styles.investorLabel}>Hidden</Text>
                         </View>
                     )}
+                    {canTapToEdit && (
+                        <MaterialCommunityIcons name="chevron-right" size={18} color={theme.colors.textTertiary} style={{ marginTop: 4 }} />
+                    )}
                 </View>
-            </View>
+            </TouchableOpacity>
         );
     };
 
@@ -301,6 +475,42 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                         )}
                     </View>
 
+                    {/* Pending Invitations Section - Only for Admins */}
+                    {isAdmin && project.pendingInvitations && project.pendingInvitations.length > 0 && (
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <Text style={styles.sectionTitle}>Pending Invitations</Text>
+                                <View style={[styles.badge, { backgroundColor: theme.colors.primaryLight }]}>
+                                    <Text style={[styles.badgeText, { color: theme.colors.primary }]}>
+                                        {project.pendingInvitations.length}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {project.pendingInvitations.map((invitation) => {
+                                const invitedUser = investors.find(i => i.id === invitation.userId);
+                                if (!invitedUser) return null;
+                                return (
+                                    <View key={invitation.id} style={styles.investorCard}>
+                                        <View style={[styles.investorAvatar, { opacity: 0.6 }]}>
+                                            <Text style={styles.investorInitials}>
+                                                {invitedUser.name.split(' ').map(n => n[0]).join('')}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.investorInfo}>
+                                            <Text style={styles.investorName}>{invitedUser.name}</Text>
+                                            <Text style={styles.investorEmail}>Invited as {invitation.role === 'active' ? 'Active' : 'Passive'}</Text>
+                                        </View>
+                                        <View style={styles.pendingBadge}>
+                                            <MaterialCommunityIcons name="clock-outline" size={14} color={theme.colors.warning} />
+                                            <Text style={styles.pendingBadgeText}>Pending</Text>
+                                        </View>
+                                    </View>
+                                );
+                            })}
+                        </View>
+                    )}
+
                     {/* Add Investor Section - Only for Admins */}
                     {isAdmin && (
                         <View style={styles.section}>
@@ -334,29 +544,39 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                                     {availableInvestors.length > 0 ? (
                                         availableInvestors
                                             .filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                                            .map((investor) => (
-                                                <TouchableOpacity
-                                                    key={investor.id}
-                                                    style={styles.addInvestorCard}
-                                                    onPress={() => handleAddInvestor(investor)}
-                                                >
-                                                    <View style={styles.addInvestorAvatar}>
-                                                        <Text style={styles.addInvestorInitials}>
-                                                            {investor.name.split(' ').map(n => n[0]).join('')}
-                                                        </Text>
-                                                    </View>
-                                                    <View style={styles.addInvestorInfo}>
-                                                        <Text style={styles.addInvestorName} numberOfLines={1}>{investor.name}</Text>
-                                                        <Text style={styles.addInvestorEmail} numberOfLines={1}>{investor.email}</Text>
-                                                    </View>
+                                            .map((investor) => {
+                                                const invited = isUserInvited(investor.id);
+                                                return (
                                                     <TouchableOpacity
-                                                        style={styles.addBtn}
-                                                        onPress={() => handleAddInvestor(investor)}
+                                                        key={investor.id}
+                                                        style={[styles.addInvestorCard, invited && { opacity: 0.7 }]}
+                                                        onPress={() => !invited && handleAddInvestor(investor)}
+                                                        disabled={invited}
                                                     >
-                                                        <MaterialCommunityIcons name="plus" size={20} color="white" />
+                                                        <View style={styles.addInvestorAvatar}>
+                                                            <Text style={styles.addInvestorInitials}>
+                                                                {investor.name.split(' ').map(n => n[0]).join('')}
+                                                            </Text>
+                                                        </View>
+                                                        <View style={styles.addInvestorInfo}>
+                                                            <Text style={styles.addInvestorName} numberOfLines={1}>{investor.name}</Text>
+                                                            <Text style={styles.addInvestorEmail} numberOfLines={1}>{investor.email}</Text>
+                                                        </View>
+                                                        {invited ? (
+                                                            <View style={styles.invitedBadge}>
+                                                                <Text style={styles.invitedBadgeText}>Invited</Text>
+                                                            </View>
+                                                        ) : (
+                                                            <TouchableOpacity
+                                                                style={styles.addBtn}
+                                                                onPress={() => handleAddInvestor(investor)}
+                                                            >
+                                                                <MaterialCommunityIcons name="plus" size={20} color="white" />
+                                                            </TouchableOpacity>
+                                                        )}
                                                     </TouchableOpacity>
-                                                </TouchableOpacity>
-                                            ))
+                                                )
+                                            })
                                     ) : (
                                         <View style={styles.emptyState}>
                                             <Text style={styles.emptyText}>No available investors to add</Text>
@@ -664,6 +884,20 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: theme.colors.warning,
     },
+    pendingBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FEF3C7',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        gap: 4,
+    },
+    pendingBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: theme.colors.warning,
+    },
     anonymousBadge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -687,9 +921,25 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
     },
     investorAmount: {
-        ...theme.typography.smallSemibold,
-        color: theme.colors.success,
+        ...theme.typography.bodyMedium,
+        fontWeight: '700',
+        color: theme.colors.textPrimary,
     },
+    // Role Badge Styles (Active/Passive)
+    roleBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+        marginLeft: 6,
+        gap: 3,
+    },
+    roleBadgeText: {
+        fontSize: 9,
+        fontWeight: '600',
+    },
+
     investorLabel: {
         ...theme.typography.caption,
         color: theme.colors.textSecondary,
@@ -802,8 +1052,10 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     approvalTitle: {
-        ...theme.typography.smallMedium,
+        fontSize: 14,
+        fontWeight: '600',
         color: theme.colors.textPrimary,
+        marginBottom: 2,
     },
     approvalStatus: {
         ...theme.typography.caption,
@@ -819,5 +1071,16 @@ const styles = StyleSheet.create({
         height: '100%',
         backgroundColor: theme.colors.success,
         borderRadius: 2,
+    },
+    invitedBadge: {
+        backgroundColor: '#E0E7FF',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    invitedBadgeText: {
+        fontSize: 11,
+        color: '#5B5CFF',
+        fontWeight: '600',
     },
 });

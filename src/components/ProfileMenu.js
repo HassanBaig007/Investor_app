@@ -163,6 +163,7 @@ ProfileMenu.propTypes = {
     onProfile: PropTypes.func,
     onSettings: PropTypes.func,
     onLogout: PropTypes.func,
+    onShare: PropTypes.func,
     userName: PropTypes.string,
 };
 

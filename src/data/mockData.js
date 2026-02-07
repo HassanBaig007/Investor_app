@@ -7,20 +7,22 @@
 // ============================================
 
 // All user accounts for testing
+// All user accounts for testing
 export const userAccounts = {
     'USR000': {
         id: 'USR000',
-        name: 'Lohith MS',        // Restored Name
+        name: 'Lohith MS',
         email: 'investor123',     // Login ID
         password: 'investor123',  // Login Password
         role: 'investor',
         avatar: null,
-        phone: '+91 98765 43210', // Restored Phone
+        phone: '+91 98765 43210',
     },
     'USR001': {
         id: 'USR001',
         name: 'Lohith MS',
-        email: 'lohith@investflow.com',
+        email: 'lohith',          // Login ID
+        password: 'lohith',       // Login Password
         role: 'investor',
         avatar: null,
         phone: '+91 98765 43210',
@@ -28,7 +30,8 @@ export const userAccounts = {
     'USR002': {
         id: 'USR002',
         name: 'Rahul Sharma',
-        email: 'rahul@investflow.com',
+        email: 'rahul',           // Login ID
+        password: 'rahul',        // Login Password
         role: 'investor',
         avatar: null,
         phone: '+91 98765 12345',
@@ -36,7 +39,8 @@ export const userAccounts = {
     'USR003': {
         id: 'USR003',
         name: 'Priya Patel',
-        email: 'priya@investflow.com',
+        email: 'priya',           // Login ID
+        password: 'priya',        // Login Password
         role: 'investor',
         avatar: null,
         phone: '+91 87654 32109',
@@ -307,6 +311,36 @@ export const projects = [
             modificationsRequireAllApproval: true,
             approvalThreshold: 100,
         },
+        // Member Roles: 'active' = full access, 'passive' = view only
+        investorRoles: {
+            'USR000': 'active',
+            'USR001': 'active',
+            'USR002': 'active',  // Creator is always active
+            'USR003': 'passive',
+            'USR004': 'passive',
+        },
+        ledgers: [
+            { id: 'LDG001', name: 'Electrical', subLedgers: ['Ramesh Electricals', 'City Power', 'Standard Fittings'] },
+            { id: 'LDG002', name: 'Transport', subLedgers: ['Fast Logistics', 'Local Tempo', 'Driver Kumar'] },
+            { id: 'LDG003', name: 'Earthwork', subLedgers: ['JCB Operator', 'Soil Disposal Co'] },
+            { id: 'LDG004', name: 'Civil Works', subLedgers: ['Mason Raju', 'Cement Supplier'] },
+            { id: 'LDG005', name: 'Plumbing', subLedgers: ['Pipe House', 'Plumber John'] },
+            { id: 'LDG006', name: 'Painting', subLedgers: ['Asian Paints Dealer', 'Painter Team'] },
+            { id: 'LDG007', name: 'Carpentry', subLedgers: ['Wood Works'] },
+            { id: 'LDG008', name: 'Flooring', subLedgers: ['Tiles World'] },
+            { id: 'LDG009', name: 'Fabrication', subLedgers: ['Steel Works'] },
+            { id: 'LDG010', name: 'Consultancy', subLedgers: ['Architect Firm', 'Structural Engineer'] },
+            { id: 'LDG011', name: 'Legal', subLedgers: ['Advocate Sharma'] },
+            { id: 'LDG012', name: 'Marketing', subLedgers: ['Digital Ads', 'Brochure Printing'] },
+            { id: 'LDG013', name: 'Site Expenses', subLedgers: ['Tea & Snacks', 'Daily Labor'] },
+            { id: 'LDG014', name: 'Fuel', subLedgers: ['Petrol Pump'] },
+            { id: 'LDG015', name: 'Machinery', subLedgers: ['Rental Co'] },
+            { id: 'LDG016', name: 'Safety', subLedgers: ['Helmets & Boots'] },
+            { id: 'LDG017', name: 'Permissions', subLedgers: ['Municipal Corp'] },
+            { id: 'LDG018', name: 'Water Supply', subLedgers: ['Tanker Service'] },
+            { id: 'LDG019', name: 'Electricity', subLedgers: ['Bescom Bill'] },
+            { id: 'LDG020', name: 'Miscellaneous', subLedgers: [] }
+        ],
         pendingSpendings: [],
         spendings: [
             {
@@ -352,6 +386,20 @@ export const projects = [
             modificationsRequireAllApproval: true,
             approvalThreshold: 100,
         },
+        // Member Roles: 'active' = full access, 'passive' = view only
+        investorRoles: {
+            'USR000': 'active',
+            'USR001': 'active',  // Creator is always active
+            'USR002': 'passive',
+            'USR004': 'active',
+        },
+        ledgers: [
+            { id: 'LDG001', name: 'Marketing', subLedgers: ['Facebook Ads', 'Google Ads', 'Agency Fee'] },
+            { id: 'LDG002', name: 'Legal Fees', subLedgers: ['Law Firm A', 'Registration'] },
+            { id: 'LDG003', name: 'Operations', subLedgers: ['Server Cost', 'Office Rent'] },
+            { id: 'LDG004', name: 'Salaries', subLedgers: ['Dev Team', 'Sales Team'] },
+            { id: 'LDG005', name: 'Travel', subLedgers: ['Flight Tickets', 'Hotels'] }
+        ],
         pendingSpendings: [
             {
                 id: 'PND001',
@@ -380,6 +428,7 @@ export const projects = [
                 approvals: { 'USR000': { status: 'approved', at: '2026-01-10T12:00:00Z' }, 'USR001': { status: 'approved', at: '2026-01-10T11:00:00Z' }, 'USR002': { status: 'approved', at: '2026-01-10T13:00:00Z' }, 'USR004': { status: 'approved', at: '2026-01-10T14:00:00Z' } }
             }
         ],
+        pendingInvitations: [],
     },
 ];
 

@@ -66,6 +66,42 @@ export default function ProjectDetailScreen({ navigation, route }) {
     const [materialType, setMaterialType] = useState('');
     const materialTypes = ['Electronics', 'Construction', 'Office Supplies', 'Equipment', 'Raw Materials', 'Other'];
 
+    // NEW: Ledger & Subledger State
+    // NEW: Ledger & Subledger State
+    const [ledgers, setLedgers] = useState(project?.ledgers || []);
+    const [selectedLedgerId, setSelectedLedgerId] = useState('');
+    const [selectedSubLedger, setSelectedSubLedger] = useState('');
+
+    // UI States for Selection Modals
+    const [showLedgerSelectModal, setShowLedgerSelectModal] = useState(false);
+    const [showSubLedgerSelectModal, setShowSubLedgerSelectModal] = useState(false);
+
+    // UI States for Management (Admin)
+    const [searchLedgerQuery, setSearchLedgerQuery] = useState('');
+    const [newLedgerName, setNewLedgerName] = useState('');
+    const [newSubLedgerName, setNewSubLedgerName] = useState('');
+    const [editMode, setEditMode] = useState(false); // Toggle inside modals to show delete/add options
+
+    // Get currently selected ledger object
+    const selectedLedgerObj = ledgers.find(l => l.id === selectedLedgerId);
+
+    // Function to format amount with commas (Indian Format)
+    const formatAmount = (value) => {
+        if (!value) return '';
+        // Remove existing commas and non-numeric chars
+        const clean = value.replace(/[^0-9.]/g, '');
+        const parts = clean.split('.');
+        // Format integer part
+        let integerPart = parts[0];
+        if (integerPart.length > 3) {
+            const lastThree = integerPart.substring(integerPart.length - 3);
+            const otherNumbers = integerPart.substring(0, integerPart.length - 3);
+            integerPart = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + lastThree;
+        }
+        return parts.length > 1 ? integerPart + '.' + parts[1] : integerPart;
+    };
+
+
     // State for modals
     const [showAddMemberModal, setShowAddMemberModal] = useState(false);
     const [showMemberOptions, setShowMemberOptions] = useState(null);
@@ -137,7 +173,15 @@ export default function ProjectDetailScreen({ navigation, route }) {
     const availableMembers = investors.filter(i => !projectMemberIds.includes(i.id));
 
     // Get creator info
+    // Get creator info
     const creator = userAccounts[project.createdBy] || investors.find(i => i.id === project.createdBy);
+
+    // Role-based access control
+    // 'passive' = View Only (can see everything but cannot add expenses or perform actions)
+    // 'active' = Full Access (can add expenses, approve, reject, etc.)
+    const userRole = project.investorRoles?.[currentUser.id] || 'active'; // Default to active
+    const isPassiveViewer = userRole === 'passive';
+    const canAddData = !isPassiveViewer && (isMember || isAdmin);
 
     // Calculate totals
     const totalApprovedSpent = approvedSpendings.reduce((sum, s) => sum + (s.amount || 0), 0);
@@ -212,7 +256,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
             description: spendingDescription.trim(),
             category: spendingCategory,
             date: spendingDate,
-            time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+            time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
             addedBy: currentUser.id,
             status: 'pending',
             // NEW: Category-specific details
@@ -221,6 +265,8 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 place: paidToPlace.trim(),
             } : null,
             materialType: spendingCategory === 'Product' ? materialType : null,
+            ledgerId: selectedLedgerId,
+            subLedger: selectedSubLedger,
             approvals: {
                 [currentUser.id]: { status: 'approved', at: new Date().toISOString() }
             },
@@ -261,7 +307,10 @@ export default function ProjectDetailScreen({ navigation, route }) {
         setSpendingDate(new Date().toISOString().split('T')[0]);
         setPaidToPerson('');
         setPaidToPlace('');
+        setPaidToPlace('');
         setMaterialType('');
+        setSelectedLedgerId('');
+        setSelectedSubLedger('');
     };
 
     // Show instant feedback
@@ -345,28 +394,56 @@ export default function ProjectDetailScreen({ navigation, route }) {
         );
     };
 
-    // Add member to project
+    // Invite member to project
     const handleAddMember = (member) => {
+        // Check if already invited
+        if (project.pendingInvitations && project.pendingInvitations.some(inv => inv.userId === member.id)) {
+            Alert.alert('Already Invited', `${member.name} has already been invited.`);
+            return;
+        }
+
         Alert.alert(
-            'Add Member',
-            `Add ${member.name} to "${project.name}" ? `,
+            'Invite Member',
+            `Send start invitation to ${member.name}?`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
-                    text: 'Add',
-                    onPress: () => {
-                        setProjectMemberIds(prev => [...prev, member.id]);
-                        if (!project.projectInvestors.includes(member.id)) {
-                            project.projectInvestors.push(member.id);
-                        }
-                        NotificationService.notifyMemberAdded(member.name, project.name);
-                        Alert.alert('Success', `${member.name} has been added to the project`);
-                        setShowAddMemberModal(false);
-                        setSearchQuery('');
-                    }
+                    text: 'Invite as Passive',
+                    onPress: () => sendInvitation(member, 'passive')
+                },
+                {
+                    text: 'Invite as Active',
+                    onPress: () => sendInvitation(member, 'active')
                 }
             ]
         );
+    };
+
+    const sendInvitation = (member, role) => {
+        if (!project.pendingInvitations) {
+            project.pendingInvitations = [];
+        }
+
+        project.pendingInvitations.push({
+            id: `INV${Date.now()}`,
+            userId: member.id,
+            role: role,
+            invitedBy: currentUser.id,
+            invitedAt: new Date().toISOString(),
+        });
+
+        // Trigger update
+        setProjectMemberIds([...project.projectInvestors]); // Just to force re-render if needed, but really just cleaning up state
+
+        NotificationService.sendLocalNotification(
+            'Invitation Sent',
+            `Invitation sent to ${member.name}`,
+            { type: 'invitation', projectId: project.id }
+        );
+
+        Alert.alert('✅ Invitation Sent', `Invitation sent to ${member.name} to join as ${role}.`);
+        setShowAddMemberModal(false);
+        setSearchQuery('');
     };
 
     // Remove member from project
@@ -396,6 +473,114 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 }
             ]
         );
+    };
+
+    // Toggle Member Status (Active/Passive)
+    const handleToggleMemberStatus = (member) => {
+        const currentRole = project.investorRoles?.[member.id] || 'active';
+        const newRole = currentRole === 'active' ? 'passive' : 'active';
+
+        Alert.alert(
+            `Make ${newRole === 'active' ? 'Active' : 'Passive'}?`,
+            `Change ${member.name}'s status to ${newRole === 'active' ? 'Active (Full Access)' : 'Passive (View Only)'}?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Confirm',
+                    onPress: () => {
+                        // In a real app, this would be an API call
+                        if (!project.investorRoles) project.investorRoles = {};
+                        project.investorRoles[member.id] = newRole;
+
+                        // Force update local state if needed (or just modal state to refresh)
+                        setShowMemberOptions(null);
+                        Alert.alert('Success', `Updated ${member.name}'s role to ${newRole}`);
+
+                        // Trigger a re-render by updating dummy state or similar if needed, 
+                        // but setting showMemberOptions(null) usually triggers re-render of parent/modal
+                        setProjectMemberIds([...projectMemberIds]); // Hack to force re-render
+                    }
+                }
+            ]
+        );
+    };
+
+    // --- LEDGER MANAGEMENT FUNCTIONS ---
+
+    const handleAddLedger = () => {
+        if (!newLedgerName.trim()) return;
+
+        // Removed limit check as requested
+
+        const newLedger = { id: Date.now().toString(), name: newLedgerName.trim(), subLedgers: [] };
+        const updatedLedgers = [...ledgers, newLedger];
+        setLedgers(updatedLedgers);
+        project.ledgers = updatedLedgers;
+        setNewLedgerName('');
+        Alert.alert('Success', 'Ledger added successfully!');
+    };
+
+    const handleDeleteLedger = (id) => {
+        Alert.alert('Delete Ledger', 'Are you sure?', [
+            { text: 'Cancel' },
+            {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => {
+                    const updatedLedgers = ledgers.filter(l => l.id !== id);
+                    setLedgers(updatedLedgers);
+                    project.ledgers = updatedLedgers;
+                    if (selectedLedgerId === id) {
+                        setSelectedLedgerId('');
+                        setSelectedSubLedger('');
+                    }
+                }
+            }
+        ]);
+    };
+
+    const handleAddSubLedger = () => {
+        if (!selectedLedgerId || !newSubLedgerName.trim()) return;
+
+        const updatedLedgers = ledgers.map(l => {
+            if (l.id === selectedLedgerId) {
+                // Check dupes
+                if (l.subLedgers && l.subLedgers.includes(newSubLedgerName.trim())) {
+                    Alert.alert('Exists', 'This sub-ledger already exists.');
+                    return l;
+                }
+                const newSubs = l.subLedgers ? [...l.subLedgers, newSubLedgerName.trim()] : [newSubLedgerName.trim()];
+                return { ...l, subLedgers: newSubs };
+            }
+            return l;
+        });
+
+        setLedgers(updatedLedgers);
+        project.ledgers = updatedLedgers;
+        setNewSubLedgerName('');
+        Alert.alert('Success', 'Sub-Ledger added successfully!');
+    };
+
+    const handleDeleteSubLedger = (subName) => {
+        Alert.alert('Delete Sub-Ledger', `Are you sure you want to delete "${subName}"?`, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => {
+                    const updatedLedgers = ledgers.map(l => {
+                        if (l.id === selectedLedgerId) {
+                            return { ...l, subLedgers: l.subLedgers.filter(s => s !== subName) };
+                        }
+                        return l;
+                    });
+                    setLedgers(updatedLedgers);
+                    project.ledgers = updatedLedgers;
+                    if (selectedSubLedger === subName) setSelectedSubLedger('');
+                    Alert.alert('Success', 'Sub-Ledger deleted successfully');
+                }
+            }
+        ]);
     };
 
     // State for Note Modal
@@ -443,7 +628,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 <View style={styles.spendingContent}>
                     <Text style={styles.spendingDescription} numberOfLines={1}>{spending.description}</Text>
                     <Text style={styles.spendingMeta}>
-                        {spending.category} • {addedByUser?.name || 'Unknown'} • {spending.date}
+                        {ledgers.find(l => l.id === spending.ledgerId)?.name || userAccounts[spending.addedBy]?.name || spending.category} • {spending.date}
                     </Text>
                 </View>
 
@@ -635,9 +820,24 @@ export default function ProjectDetailScreen({ navigation, route }) {
                         </TouchableOpacity>
                     )}
 
+                    {/* =================== VIEW ONLY BANNER FOR PASSIVE MEMBERS =================== */}
+                    {viewMode !== 'details' && isPassiveViewer && (
+                        <View style={styles.viewOnlyBanner}>
+                            <View style={styles.viewOnlyIconContainer}>
+                                <MaterialCommunityIcons name="eye" size={24} color="#6B7280" />
+                            </View>
+                            <View style={styles.viewOnlyContent}>
+                                <Text style={styles.viewOnlyTitle}>👁️ View Only Access</Text>
+                                <Text style={styles.viewOnlySubtitle}>
+                                    You are a passive member. You can view all project details and expenses, but you cannot add or modify anything.
+                                </Text>
+                            </View>
+                        </View>
+                    )}
+
                     {/* =================== ADD SPENDING FORM - ACCOUNT BOOK STYLE =================== */}
-                    {/* Only show when NOT in view details mode */}
-                    {viewMode !== 'details' && (
+                    {/* Only show for Active members who can add data */}
+                    {viewMode !== 'details' && canAddData && (
                         <View style={styles.spendingFormCard}>
                             {/* Account Book Header */}
                             <View style={styles.accountBookHeader}>
@@ -718,6 +918,57 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                 )}
                             </View>
 
+                            {/* Ledger & Subledger Section - Scrollable */}
+                            {/* Ledger & Subledger Section - Revamped */}
+                            <View style={styles.ledgerSection}>
+                                <View style={{ flexDirection: 'row', gap: 12 }}>
+                                    {/* LEDGER SELECTOR */}
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.fieldLabel}>📚 Ledger</Text>
+                                        <TouchableOpacity
+                                            style={styles.dropdownButton}
+                                            onPress={() => {
+                                                setEditMode(false);
+                                                setShowLedgerSelectModal(true);
+                                            }}
+                                        >
+                                            <Text style={[
+                                                styles.dropdownButtonText,
+                                                !selectedLedgerId && styles.placeholderText
+                                            ]} numberOfLines={1}>
+                                                {selectedLedgerObj?.name || 'Select Ledger'}
+                                            </Text>
+                                            <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {/* SUB-LEDGER SELECTOR */}
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.fieldLabel}>👤 Sub-Ledger</Text>
+                                        <TouchableOpacity
+                                            style={[styles.dropdownButton, !selectedLedgerId && styles.disabledInput]}
+                                            onPress={() => {
+                                                if (selectedLedgerId) {
+                                                    setEditMode(false);
+                                                    setShowSubLedgerSelectModal(true);
+                                                } else {
+                                                    Alert.alert('Select Ledger', 'Please select a main ledger first.');
+                                                }
+                                            }}
+                                            disabled={!selectedLedgerId}
+                                        >
+                                            <Text style={[
+                                                styles.dropdownButtonText,
+                                                !selectedSubLedger && styles.placeholderText
+                                            ]} numberOfLines={1}>
+                                                {selectedSubLedger || 'Select Name'}
+                                            </Text>
+                                            <MaterialCommunityIcons name="chevron-down" size={20} color={selectedLedgerId ? theme.colors.textSecondary : theme.colors.border} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </View>
+
                             {/* Amount Input - Ledger Style */}
                             <View style={styles.amountSection}>
                                 <Text style={styles.fieldLabel}>💰 Amount</Text>
@@ -726,10 +977,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                     <TextInput
                                         style={styles.amountInput}
                                         value={spendingAmount}
-                                        onChangeText={(text) => {
-                                            const filtered = text.replace(/[^0-9.]/g, '');
-                                            setSpendingAmount(filtered);
-                                        }}
+                                        onChangeText={(text) => setSpendingAmount(formatAmount(text))}
                                         placeholder="0.00"
                                         placeholderTextColor={theme.colors.textTertiary}
                                         keyboardType="decimal-pad"
@@ -928,39 +1176,26 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                                     isCurrentUser && styles.contributorRowHighlight
                                                 ]}
                                             >
-                                                {/* Rank */}
-                                                <View style={[
-                                                    styles.rankBadge,
-                                                    isTop3 && { backgroundColor: rankColors[index] + '20' }
-                                                ]}>
-                                                    {isTop3 ? (
-                                                        <MaterialCommunityIcons
-                                                            name={rankIcons[index]}
-                                                            size={18}
-                                                            color={rankColors[index]}
-                                                        />
-                                                    ) : (
-                                                        <Text style={styles.rankNumber}>#{index + 1}</Text>
-                                                    )}
+                                                {/* No Rank Badge anymore, just Avatar */}
+                                                <View style={styles.contributorAvatarWrapper}>
+                                                    <LinearGradient
+                                                        colors={isTop3 ? [rankColors[index], rankColors[index]] : ['#6366F1', '#8B5CF6']}
+                                                        style={styles.contributorAvatar}
+                                                    >
+                                                        <Text style={styles.contributorInitials}>
+                                                            {item.memberUser.name?.charAt(0) || '?'}
+                                                        </Text>
+                                                    </LinearGradient>
                                                 </View>
 
-                                                {/* Avatar */}
-                                                <LinearGradient
-                                                    colors={isTop3 ? [rankColors[index], rankColors[index]] : ['#6366F1', '#8B5CF6']}
-                                                    style={styles.contributorAvatar}
-                                                >
-                                                    <Text style={styles.contributorInitials}>
-                                                        {item.memberUser.name?.charAt(0) || '?'}
-                                                    </Text>
-                                                </LinearGradient>
-
                                                 {/* Info */}
-                                                <View style={styles.contributorInfo}>
+                                                <View style={[styles.contributorInfo, { marginRight: 20 }]}>
                                                     <Text style={styles.contributorName} numberOfLines={1}>
-                                                        {item.memberUser.name}{isCurrentUser && ' (You)'}
+                                                        {isCurrentUser ? 'Self Account' : item.memberUser.name}
                                                     </Text>
+                                                    {/* Funded By Logic */}
                                                     <Text style={styles.contributorMeta}>
-                                                        {item.spendingCount} entries
+                                                        Funded By: {ledgers.find(l => l.id === item.member.id)?.name || item.memberUser.name.split(' ')[0]}
                                                     </Text>
                                                 </View>
 
@@ -1123,67 +1358,75 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 transparent={true}
                 onRequestClose={() => setShowPendingApprovals(false)}
             >
-                <TouchableWithoutFeedback onPress={() => setShowPendingApprovals(false)}>
-                    <View style={styles.modalOverlay}>
-                        <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                            <View style={styles.modalContent}>
-                                <View style={styles.modalHeader}>
-                                    <Text style={styles.modalTitle}>Pending Approvals</Text>
-                                    <TouchableOpacity onPress={() => setShowPendingApprovals(false)}>
-                                        <MaterialCommunityIcons name="close" size={24} color={theme.colors.textPrimary} />
-                                    </TouchableOpacity>
-                                </View>
+                <View style={styles.modalOverlay} pointerEvents="box-none">
+                    <TouchableOpacity
+                        style={StyleSheet.absoluteFill}
+                        onPress={() => setShowPendingApprovals(false)}
+                        activeOpacity={1}
+                    >
+                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
+                    </TouchableOpacity>
 
-                                {/* Instant Feedback Banner */}
-                                {actionFeedback && (
-                                    <View style={[
-                                        styles.feedbackBanner,
-                                        actionFeedback.type === 'approve' && styles.feedbackApprove,
-                                        actionFeedback.type === 'reject' && styles.feedbackReject,
-                                        actionFeedback.type === 'success' && styles.feedbackSuccess,
-                                    ]}>
-                                        <MaterialCommunityIcons
-                                            name={actionFeedback.type === 'reject' ? 'close-circle' : 'check-circle'}
-                                            size={20}
-                                            color="white"
-                                        />
-                                        <Text style={styles.feedbackText}>{actionFeedback.message}</Text>
-                                    </View>
-                                )}
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>Pending Approvals</Text>
+                            <TouchableOpacity onPress={() => setShowPendingApprovals(false)}>
+                                <MaterialCommunityIcons name="close" size={24} color={theme.colors.textPrimary} />
+                            </TouchableOpacity>
+                        </View>
 
-                                <ScrollView style={styles.modalList}>
-                                    {/* Pending Section */}
-                                    {pendingSpendings.length > 0 && (
-                                        <View style={styles.modalSectionHeader}>
-                                            <MaterialCommunityIcons name="clock-outline" size={18} color="#F59E0B" />
-                                            <Text style={styles.modalSectionTitle}>Awaiting Approval ({pendingSpendings.length})</Text>
-                                        </View>
-                                    )}
-                                    {pendingSpendings.map(renderPendingSpendingItem)}
-
-                                    {/* Rejected Section */}
-                                    {rejectedSpendings.length > 0 && (
-                                        <>
-                                            <View style={[styles.modalSectionHeader, { marginTop: 24 }]}>
-                                                <MaterialCommunityIcons name="close-circle-outline" size={18} color="#EF4444" />
-                                                <Text style={[styles.modalSectionTitle, { color: '#EF4444' }]}>Rejected ({rejectedSpendings.length})</Text>
-                                            </View>
-                                            {rejectedSpendings.map(renderRejectedSpendingItem)}
-                                        </>
-                                    )}
-
-                                    {pendingSpendings.length === 0 && rejectedSpendings.length === 0 && (
-                                        <View style={styles.emptyState}>
-                                            <MaterialCommunityIcons name="check-circle" size={48} color="#10B981" />
-                                            <Text style={styles.emptyText}>All caught up!</Text>
-                                            <Text style={styles.emptySubText}>No pending or rejected spendings</Text>
-                                        </View>
-                                    )}
-                                </ScrollView>
+                        {/* Instant Feedback Banner */}
+                        {actionFeedback && (
+                            <View style={[
+                                styles.feedbackBanner,
+                                actionFeedback.type === 'approve' && styles.feedbackApprove,
+                                actionFeedback.type === 'reject' && styles.feedbackReject,
+                                actionFeedback.type === 'success' && styles.feedbackSuccess,
+                            ]}>
+                                <MaterialCommunityIcons
+                                    name={actionFeedback.type === 'reject' ? 'close-circle' : 'check-circle'}
+                                    size={20}
+                                    color="white"
+                                />
+                                <Text style={styles.feedbackText}>{actionFeedback.message}</Text>
                             </View>
-                        </TouchableWithoutFeedback>
+                        )}
+
+                        <ScrollView
+                            style={{ paddingHorizontal: 16 }}
+                            contentContainerStyle={{ paddingBottom: 30, paddingTop: 10 }}
+                            showsVerticalScrollIndicator={true}
+                        >
+                            {/* Pending Section */}
+                            {pendingSpendings.length > 0 && (
+                                <View style={styles.modalSectionHeader}>
+                                    <MaterialCommunityIcons name="clock-outline" size={18} color="#F59E0B" />
+                                    <Text style={styles.modalSectionTitle}>Awaiting Approval ({pendingSpendings.length})</Text>
+                                </View>
+                            )}
+                            {pendingSpendings.map(renderPendingSpendingItem)}
+
+                            {/* Rejected Section */}
+                            {rejectedSpendings.length > 0 && (
+                                <>
+                                    <View style={[styles.modalSectionHeader, { marginTop: 24 }]}>
+                                        <MaterialCommunityIcons name="close-circle-outline" size={18} color="#EF4444" />
+                                        <Text style={[styles.modalSectionTitle, { color: '#EF4444' }]}>Rejected ({rejectedSpendings.length})</Text>
+                                    </View>
+                                    {rejectedSpendings.map(renderRejectedSpendingItem)}
+                                </>
+                            )}
+
+                            {pendingSpendings.length === 0 && rejectedSpendings.length === 0 && (
+                                <View style={styles.emptyState}>
+                                    <MaterialCommunityIcons name="check-circle" size={48} color="#10B981" />
+                                    <Text style={styles.emptyText}>All caught up!</Text>
+                                    <Text style={styles.emptySubText}>No pending or rejected spendings</Text>
+                                </View>
+                            )}
+                        </ScrollView>
                     </View>
-                </TouchableWithoutFeedback>
+                </View>
             </Modal>
 
             {/* =================== SPENDING DETAIL MODAL =================== */}
@@ -1229,7 +1472,30 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                                 </View>
                                                 <View style={styles.detailInfoRow}>
                                                     <MaterialCommunityIcons name="clock-outline" size={18} color={theme.colors.textSecondary} />
-                                                    <Text style={styles.detailInfoText}>{showSpendingDetail.time || '—'}</Text>
+                                                    <Text style={styles.detailInfoText}>
+                                                        {(() => {
+                                                            const rawTime = showSpendingDetail.time;
+                                                            if (!rawTime) return '—';
+                                                            const t = String(rawTime).trim();
+
+                                                            // If already has am/pm
+                                                            if (/am|pm/i.test(t)) return t;
+
+                                                            // Try parsing HH:mm or H:mm
+                                                            const parts = t.split(':');
+                                                            if (parts.length >= 2) {
+                                                                let h = parseInt(parts[0], 10);
+                                                                const m = parts[1];
+                                                                if (!isNaN(h)) {
+                                                                    const ampm = h >= 12 ? 'PM' : 'AM';
+                                                                    h = h % 12;
+                                                                    h = h === 0 ? 12 : h;
+                                                                    return `${h}:${m} ${ampm}`;
+                                                                }
+                                                            }
+                                                            return t;
+                                                        })()}
+                                                    </Text>
                                                 </View>
                                                 <View style={styles.detailInfoRow}>
                                                     <MaterialCommunityIcons name="account" size={18} color={theme.colors.textSecondary} />
@@ -1237,31 +1503,42 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                                         Added by {userAccounts[showSpendingDetail.addedBy]?.name || 'Unknown'}
                                                     </Text>
                                                 </View>
-                                            </View>
 
-                                            {/* Approvals List */}
-                                            {showSpendingDetail.approvals && Object.keys(showSpendingDetail.approvals).length > 0 && (
-                                                <View style={styles.approvalsSection}>
-                                                    <Text style={styles.approvalsSectionTitle}>Approvals</Text>
-                                                    {Object.entries(showSpendingDetail.approvals).map(([userId, approval]) => (
-                                                        <View key={userId} style={styles.approvalRow}>
-                                                            <View style={styles.approvalUserBadge}>
-                                                                <Text style={styles.approvalUserInitial}>
-                                                                    {(userAccounts[userId]?.name || 'U').charAt(0)}
-                                                                </Text>
-                                                            </View>
-                                                            <Text style={styles.approvalUserName}>
-                                                                {userAccounts[userId]?.name || 'Unknown'}
-                                                            </Text>
-                                                            <View style={styles.approvalStatusBadge}>
-                                                                <MaterialCommunityIcons name="check" size={14} color="#10B981" />
-                                                                <Text style={styles.approvalStatusText}>Approved</Text>
-                                                            </View>
-                                                        </View>
-                                                    ))}
+                                                {/* Funded By Row */}
+                                                <View style={styles.detailInfoRow}>
+                                                    <MaterialCommunityIcons name="wallet-outline" size={18} color={theme.colors.textSecondary} />
+                                                    <Text style={styles.detailInfoText}>
+                                                        Funded By: <Text style={{ fontWeight: '600', color: theme.colors.textPrimary }}>
+                                                            {ledgers.find(l => l.id === showSpendingDetail.ledgerId)?.name || 'General'}
+                                                        </Text>
+                                                        {showSpendingDetail.subLedger ? ` • ${showSpendingDetail.subLedger}` : ''}
+                                                    </Text>
                                                 </View>
-                                            )}
+                                            </View>
                                         </View>
+
+                                        {/* Approvals List */}
+                                        {showSpendingDetail.approvals && Object.keys(showSpendingDetail.approvals).length > 0 && (
+                                            <View style={styles.approvalsSection}>
+                                                <Text style={styles.approvalsSectionTitle}>Approvals</Text>
+                                                {Object.entries(showSpendingDetail.approvals).map(([userId, approval]) => (
+                                                    <View key={userId} style={styles.approvalRow}>
+                                                        <View style={styles.approvalUserBadge}>
+                                                            <Text style={styles.approvalUserInitial}>
+                                                                {(userAccounts[userId]?.name || 'U').charAt(0)}
+                                                            </Text>
+                                                        </View>
+                                                        <Text style={styles.approvalUserName}>
+                                                            {userAccounts[userId]?.name || 'Unknown'}
+                                                        </Text>
+                                                        <View style={styles.approvalStatusBadge}>
+                                                            <MaterialCommunityIcons name="check" size={14} color="#10B981" />
+                                                            <Text style={styles.approvalStatusText}>Approved</Text>
+                                                        </View>
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        )}
                                     </ScrollView>
                                 )}
                             </View>
@@ -1338,10 +1615,10 @@ export default function ProjectDetailScreen({ navigation, route }) {
                         </TouchableWithoutFeedback>
                     </KeyboardAvoidingView>
                 </TouchableWithoutFeedback>
-            </Modal>
+            </Modal >
 
             {/* Member Options Modal */}
-            <Modal
+            < Modal
                 visible={showMemberOptions !== null}
                 animationType="fade"
                 transparent={true}
@@ -1354,6 +1631,25 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                 {showMemberOptions && (
                                     <>
                                         <Text style={styles.optionsTitle}>{showMemberOptions.name}</Text>
+
+                                        <TouchableOpacity
+                                            style={[styles.optionItem, { borderBottomWidth: 1, borderBottomColor: theme.colors.border }]}
+                                            onPress={() => handleToggleMemberStatus(showMemberOptions)}
+                                        >
+                                            <MaterialCommunityIcons
+                                                name={project.investorRoles?.[showMemberOptions.id] === 'passive' ? "account-check" : "eye-off"}
+                                                size={22}
+                                                color={theme.colors.primary}
+                                            />
+                                            <View>
+                                                <Text style={styles.optionText}>
+                                                    {project.investorRoles?.[showMemberOptions.id] === 'passive' ? 'Make Member Active' : 'Make Member Passive'}
+                                                </Text>
+                                                <Text style={styles.optionSubText}>
+                                                    {project.investorRoles?.[showMemberOptions.id] === 'passive' ? 'Allow adding expenses' : 'Restrict to view only'}
+                                                </Text>
+                                            </View>
+                                        </TouchableOpacity>
                                         <TouchableOpacity
                                             style={[styles.optionItem, styles.optionItemDanger]}
                                             onPress={() => handleRemoveMember(showMemberOptions)}
@@ -1374,10 +1670,10 @@ export default function ProjectDetailScreen({ navigation, route }) {
                         </TouchableWithoutFeedback>
                     </View>
                 </TouchableWithoutFeedback>
-            </Modal>
+            </Modal >
 
             {/* Note Input Modal */}
-            <Modal
+            < Modal
                 visible={showNoteModal}
                 transparent={true}
                 animationType="fade"
@@ -1439,8 +1735,261 @@ export default function ProjectDetailScreen({ navigation, route }) {
                         </TouchableWithoutFeedback>
                     </View>
                 </TouchableWithoutFeedback>
+            </Modal >
+
+            {/* ================= LEDGER SELECTION & MANAGEMENT MODAL ================= */}
+            < Modal
+                visible={showLedgerSelectModal}
+                animationType="fade"
+                transparent={true}
+                onRequestClose={() => setShowLedgerSelectModal(false)}
+            >
+                <TouchableWithoutFeedback onPress={() => setShowLedgerSelectModal(false)}>
+                    <View style={styles.modalOverlayCenter}>
+                        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                            <View style={styles.modalContainerFancy}>
+                                {/* Header */}
+                                <View style={styles.modalHeaderInfo}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                        <MaterialCommunityIcons name="book-open-page-variant" size={24} color={theme.colors.primary} />
+                                        <Text style={styles.modalTitleFancy}>Select Ledger</Text>
+                                    </View>
+                                    <Text style={styles.modalSubtitleFancy}>Major Account Head</Text>
+                                </View>
+
+                                {/* Controls Row */}
+                                <View style={styles.modalControlsRow}>
+                                    <View style={styles.searchBoxFancy}>
+                                        <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textTertiary} />
+                                        <TextInput
+                                            style={styles.searchInputFancy}
+                                            placeholder="Search ledgers..."
+                                            placeholderTextColor={theme.colors.textTertiary}
+                                            value={searchLedgerQuery}
+                                            onChangeText={setSearchLedgerQuery}
+                                        />
+                                    </View>
+
+                                    {isAdmin && (
+                                        <TouchableOpacity
+                                            style={[styles.manageBtnFancy, editMode && styles.manageBtnActive]}
+                                            onPress={() => setEditMode(!editMode)}
+                                        >
+                                            <MaterialCommunityIcons name={editMode ? "check" : "pencil"} size={20} color={editMode ? "white" : theme.colors.primary} />
+                                            <Text style={[styles.manageBtnText, editMode && { color: 'white' }]}>
+                                                {editMode ? 'Done' : 'Edit'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+
+                                {/* Add New (Only in Edit Mode) */}
+                                {editMode && (
+                                    <View style={styles.addNewRowFancy}>
+                                        <TextInput
+                                            style={styles.addNewInputFancy}
+                                            placeholder="Ex: Solar Installation"
+                                            placeholderTextColor={theme.colors.textTertiary}
+                                            value={newLedgerName}
+                                            onChangeText={setNewLedgerName}
+                                        />
+                                        <TouchableOpacity
+                                            style={[styles.addBtnFancy, !newLedgerName.trim() && styles.disabledBtn]}
+                                            onPress={handleAddLedger}
+                                            disabled={!newLedgerName.trim()}
+                                        >
+                                            <MaterialCommunityIcons name="plus" size={22} color="white" />
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+
+                                {/* List */}
+                                <ScrollView style={styles.listFancy} showsVerticalScrollIndicator={false}>
+                                    {ledgers.filter(l => l.name.toLowerCase().includes(searchLedgerQuery.toLowerCase())).map(l => (
+                                        <TouchableOpacity
+                                            key={l.id}
+                                            style={[
+                                                styles.listItemFancy,
+                                                selectedLedgerId === l.id && !editMode && styles.listItemSelected
+                                            ]}
+                                            onPress={() => {
+                                                if (!editMode) {
+                                                    setSelectedLedgerId(l.id);
+                                                    setSelectedSubLedger('');
+                                                    setShowLedgerSelectModal(false);
+                                                }
+                                            }}
+                                            activeOpacity={0.7}
+                                            disabled={editMode}
+                                        >
+                                            <View style={[styles.iconBoxFancy, selectedLedgerId === l.id && !editMode && { backgroundColor: theme.colors.primary }]}>
+                                                <MaterialCommunityIcons name="book-variant" size={20} color={selectedLedgerId === l.id && !editMode ? "white" : theme.colors.primary} />
+                                            </View>
+
+                                            <View style={styles.listItemContent}>
+                                                <Text style={[
+                                                    styles.listItemTitle,
+                                                    selectedLedgerId === l.id && !editMode && styles.listItemTitleSelected
+                                                ]}>{l.name}</Text>
+                                                <Text style={styles.listItemSubtitle}>{l.subLedgers?.length || 0} sub-accounts</Text>
+                                            </View>
+
+                                            {/* Action Icon */}
+                                            {editMode ? (
+                                                <TouchableOpacity
+                                                    onPress={() => handleDeleteLedger(l.id)}
+                                                    style={styles.deleteIconBtn}
+                                                >
+                                                    <MaterialCommunityIcons name="trash-can-outline" size={20} color="#EF4444" />
+                                                </TouchableOpacity>
+                                            ) : (
+                                                selectedLedgerId === l.id && (
+                                                    <MaterialCommunityIcons name="check-circle" size={22} color={theme.colors.primary} />
+                                                )
+                                            )}
+                                        </TouchableOpacity>
+                                    ))}
+
+                                    {ledgers.length === 0 && (
+                                        <View style={styles.emptyStateFancy}>
+                                            <Text style={styles.emptyTextFancy}>No ledgers found.</Text>
+                                        </View>
+                                    )}
+                                </ScrollView>
+
+                                <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowLedgerSelectModal(false)}>
+                                    <Text style={styles.closeModalText}>Close</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
             </Modal>
-        </SafeAreaView>
+
+            {/* ================= SUB-LEDGER SELECTION & MANAGEMENT MODAL ================= */}
+            <Modal
+                visible={showSubLedgerSelectModal}
+                animationType="fade"
+                transparent={true}
+                onRequestClose={() => setShowSubLedgerSelectModal(false)}
+            >
+                <TouchableWithoutFeedback onPress={() => setShowSubLedgerSelectModal(false)}>
+                    <View style={styles.modalOverlayCenter}>
+                        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                            <View style={styles.modalContainerFancy}>
+                                {/* Header */}
+                                <View style={styles.modalHeaderInfo}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <MaterialCommunityIcons name="account-group" size={24} color={theme.colors.primary} />
+                                        <Text style={styles.modalTitleFancy}>Select Sub-Ledger</Text>
+                                    </View>
+                                    <Text style={styles.modalSubtitleFancy}>
+                                        Under: <Text style={{ fontWeight: '700', color: theme.colors.primary }}>{selectedLedgerObj?.name}</Text>
+                                    </Text>
+                                </View>
+
+                                {/* Controls */}
+                                <View style={styles.modalControlsRow}>
+                                    <View style={{ flex: 1 }} />
+
+                                    {isAdmin && (
+                                        <TouchableOpacity
+                                            style={[styles.manageBtnFancy, editMode && styles.manageBtnActive]}
+                                            onPress={() => setEditMode(!editMode)}
+                                        >
+                                            <MaterialCommunityIcons name={editMode ? "check" : "pencil"} size={20} color={editMode ? "white" : theme.colors.primary} />
+                                            <Text style={[styles.manageBtnText, editMode && { color: 'white' }]}>
+                                                {editMode ? 'Done' : 'Edit'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+
+                                {/* Add New (Edit Mode) */}
+                                {editMode && (
+                                    <View style={styles.addNewRowFancy}>
+                                        <TextInput
+                                            style={styles.addNewInputFancy}
+                                            placeholder="Add Name (e.g. John Doe)"
+                                            placeholderTextColor={theme.colors.textTertiary}
+                                            value={newSubLedgerName}
+                                            onChangeText={setNewSubLedgerName}
+                                        />
+                                        <TouchableOpacity
+                                            style={[styles.addBtnFancy, !newSubLedgerName.trim() && styles.disabledBtn]}
+                                            onPress={handleAddSubLedger}
+                                            disabled={!newSubLedgerName.trim()}
+                                        >
+                                            <MaterialCommunityIcons name="plus" size={22} color="white" />
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+
+                                <ScrollView style={styles.listFancy} showsVerticalScrollIndicator={false}>
+                                    {selectedLedgerObj?.subLedgers && selectedLedgerObj.subLedgers.length > 0 ? (
+                                        selectedLedgerObj.subLedgers.map((subName, idx) => (
+                                            <TouchableOpacity
+                                                key={idx}
+                                                style={[
+                                                    styles.listItemFancy,
+                                                    selectedSubLedger === subName && !editMode && styles.listItemSelected
+                                                ]}
+                                                onPress={() => {
+                                                    if (!editMode) {
+                                                        setSelectedSubLedger(subName);
+                                                        setShowSubLedgerSelectModal(false);
+                                                    }
+                                                }}
+                                                activeOpacity={0.7}
+                                                disabled={editMode}
+                                            >
+                                                <LinearGradient
+                                                    colors={['#EEF2FF', '#E0E7FF']}
+                                                    style={styles.avatarFancy}
+                                                >
+                                                    <Text style={styles.avatarTextFancy}>{subName.charAt(0)}</Text>
+                                                </LinearGradient>
+
+                                                <View style={styles.listItemContent}>
+                                                    <Text style={[
+                                                        styles.listItemTitle,
+                                                        selectedSubLedger === subName && !editMode && styles.listItemTitleSelected
+                                                    ]}>{subName}</Text>
+                                                </View>
+
+                                                {/* Actions */}
+                                                {editMode ? (
+                                                    <TouchableOpacity
+                                                        onPress={() => handleDeleteSubLedger(subName)}
+                                                        style={styles.deleteIconBtn}
+                                                    >
+                                                        <MaterialCommunityIcons name="trash-can-outline" size={20} color="#EF4444" />
+                                                    </TouchableOpacity>
+                                                ) : (
+                                                    selectedSubLedger === subName && (
+                                                        <MaterialCommunityIcons name="check-circle" size={22} color={theme.colors.primary} />
+                                                    )
+                                                )}
+                                            </TouchableOpacity>
+                                        ))
+                                    ) : (
+                                        <View style={styles.emptyStateFancy}>
+                                            <MaterialCommunityIcons name="account-search-outline" size={48} color={theme.colors.textTertiary} />
+                                            <Text style={styles.emptyTextFancy}>No names added yet.</Text>
+                                            {isAdmin && <Text style={styles.emptySubTextFancy}>Tap 'Edit' to add people.</Text>}
+                                        </View>
+                                    )}
+                                </ScrollView>
+
+                                <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowSubLedgerSelectModal(false)}>
+                                    <Text style={styles.closeModalText}>Close</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View >
+                </TouchableWithoutFeedback >
+            </Modal >
+        </SafeAreaView >
     );
 }
 
@@ -1607,7 +2156,7 @@ const styles = StyleSheet.create({
     accountBookHeaderLeft: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 16,
     },
     ledgerIcon: {
         width: 44,
@@ -2230,10 +2779,10 @@ const styles = StyleSheet.create({
     // Pending Card - Redesigned for no overlapping
     pendingCard: {
         backgroundColor: theme.colors.surface,
-        borderRadius: 20,
-        padding: 20,
-        marginBottom: 16,
-        borderWidth: 2,
+        borderRadius: 16,
+        padding: 14,
+        marginBottom: 12,
+        borderWidth: 1.5,
         borderColor: '#FDE68A',
         ...theme.shadows.card,
     },
@@ -2241,12 +2790,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 16,
+        marginBottom: 10,
     },
     pendingCategoryIcon: {
-        width: 56,
-        height: 56,
-        borderRadius: 16,
+        width: 44,
+        height: 44,
+        borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -2260,21 +2809,21 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
     pendingAmountValue: {
-        fontSize: 28,
+        fontSize: 22,
         fontWeight: '700',
         color: '#F59E0B',
     },
     pendingDescriptionText: {
         ...theme.typography.bodyMedium,
         color: theme.colors.textPrimary,
-        fontSize: 16,
-        marginBottom: 12,
+        fontSize: 14,
+        marginBottom: 10,
     },
     pendingMetaRow: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 16,
-        marginBottom: 16,
+        gap: 10,
+        marginBottom: 10,
     },
     pendingMetaItem: {
         flexDirection: 'row',
@@ -2288,15 +2837,15 @@ const styles = StyleSheet.create({
     // Approval Progress Section
     approvalProgressSection: {
         backgroundColor: theme.colors.surfaceAlt,
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 16,
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 12,
     },
     approvalProgressHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 10,
+        marginBottom: 6,
     },
     approvalProgressTitle: {
         ...theme.typography.captionBold,
@@ -2309,9 +2858,9 @@ const styles = StyleSheet.create({
         color: '#10B981',
     },
     approvalProgressBar: {
-        height: 8,
+        height: 6,
         backgroundColor: theme.colors.border,
-        borderRadius: 4,
+        borderRadius: 3,
         overflow: 'hidden',
     },
     approvalProgressFill: {
@@ -2322,56 +2871,57 @@ const styles = StyleSheet.create({
     approvedByText: {
         ...theme.typography.caption,
         color: theme.colors.textSecondary,
-        marginTop: 10,
+        marginTop: 6,
+        fontSize: 11,
     },
-    // Action Buttons
     pendingActionButtons: {
         flexDirection: 'row',
-        gap: 12,
+        gap: 10,
+        marginTop: 4,
     },
     rejectActionBtn: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 14,
-        borderRadius: 14,
+        paddingVertical: 10,
+        borderRadius: 10,
         backgroundColor: '#FEE2E2',
-        gap: 8,
+        gap: 6,
     },
     rejectActionText: {
         color: '#EF4444',
         fontWeight: '600',
-        fontSize: 15,
+        fontSize: 14,
     },
     approveActionBtn: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 14,
-        borderRadius: 14,
+        paddingVertical: 10,
+        borderRadius: 10,
         backgroundColor: '#10B981',
-        gap: 8,
+        gap: 6,
     },
     approveActionText: {
         color: 'white',
         fontWeight: '600',
-        fontSize: 15,
+        fontSize: 14,
     },
-    // Status Badge
     yourStatusBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
-        paddingVertical: 12,
+        gap: 6,
+        paddingVertical: 8,
         backgroundColor: '#D1FAE5',
-        borderRadius: 12,
+        borderRadius: 10,
     },
     yourStatusText: {
         color: '#10B981',
         fontWeight: '600',
+        fontSize: 13,
     },
     // Rejected Card
     rejectedCard: {
@@ -2552,12 +3102,18 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'flex-end',
     },
+    modalOverlayCenter: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     modalContent: {
         backgroundColor: theme.colors.surface,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         maxHeight: '80%',
-        paddingBottom: 40,
+        paddingBottom: 20,
     },
     modalHeader: {
         flexDirection: 'row',
@@ -2573,6 +3129,7 @@ const styles = StyleSheet.create({
     },
     modalList: {
         paddingHorizontal: 20,
+        maxHeight: '100%',
     },
     searchContainer: {
         flexDirection: 'row',
@@ -2882,5 +3439,281 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
         color: 'white',
+    },
+    // View Only Banner (for Passive Members)
+    viewOnlyBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(107, 114, 128, 0.12)',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(107, 114, 128, 0.25)',
+        gap: 14,
+    },
+    viewOnlyIconContainer: {
+        width: 50,
+        height: 50,
+        borderRadius: 12,
+        backgroundColor: 'rgba(107, 114, 128, 0.18)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    viewOnlyContent: {
+        flex: 1,
+    },
+    viewOnlyTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#4B5563',
+        marginBottom: 4,
+    },
+    viewOnlySubtitle: {
+        fontSize: 13,
+        lineHeight: 19,
+        color: '#6B7280',
+    },
+    // Ledger UI
+    // Styles for New Ledger Dropdowns
+    dropdownButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: theme.colors.surfaceAlt,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        marginTop: 6,
+    },
+    dropdownButtonText: {
+        ...theme.typography.body,
+        color: theme.colors.textPrimary,
+        flex: 1,
+        marginRight: 8,
+    },
+    placeholderText: {
+        color: theme.colors.textTertiary,
+    },
+    disabledInput: {
+        backgroundColor: theme.colors.background,
+        opacity: 0.6,
+    },
+
+    // FANCY MODAL STYLES
+    modalContainerFancy: {
+        width: SCREEN_WIDTH - 40,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 24,
+        padding: 20,
+        maxHeight: SCREEN_HEIGHT * 0.75,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
+        alignSelf: 'center',
+    },
+    modalHeaderInfo: {
+        marginBottom: 16,
+    },
+    modalTitleFancy: {
+        fontSize: 22,
+        fontWeight: '700',
+        color: theme.colors.textPrimary,
+        marginBottom: 4,
+    },
+    modalSubtitleFancy: {
+        fontSize: 14,
+        color: theme.colors.textSecondary,
+    },
+    modalControlsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginBottom: 16,
+    },
+    searchBoxFancy: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.surfaceAlt,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        height: 44,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    searchInputFancy: {
+        flex: 1,
+        marginLeft: 8,
+        fontSize: 15,
+        color: theme.colors.textPrimary,
+        height: '100%',
+    },
+    manageBtnFancy: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 14,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: '#EEF2FF',
+    },
+    manageBtnActive: {
+        backgroundColor: theme.colors.primary,
+    },
+    manageBtnText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: theme.colors.primary,
+    },
+    addNewRowFancy: {
+        flexDirection: 'row',
+        gap: 10,
+        marginBottom: 16,
+    },
+    addNewInputFancy: {
+        flex: 1,
+        height: 48,
+        backgroundColor: theme.colors.surfaceAlt,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        color: theme.colors.textPrimary,
+    },
+    addBtnFancy: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: theme.colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    listFancy: {
+        maxHeight: 300,
+    },
+    listItemFancy: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.borderLight,
+        gap: 14,
+    },
+    listItemSelected: {
+        backgroundColor: '#EEF2FF',
+        borderRadius: 12,
+        borderBottomWidth: 0,
+    },
+    iconBoxFancy: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        backgroundColor: '#F3F4F6',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    avatarFancy: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    avatarTextFancy: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: theme.colors.primary,
+    },
+    listItemContent: {
+        flex: 1,
+    },
+    listItemTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: theme.colors.textPrimary,
+    },
+    listItemTitleSelected: {
+        color: theme.colors.primary,
+    },
+    listItemSubtitle: {
+        fontSize: 12,
+        color: theme.colors.textTertiary,
+        marginTop: 2,
+    },
+    deleteIconBtn: {
+        padding: 8,
+        backgroundColor: '#FEE2E2',
+        borderRadius: 8,
+    },
+    emptyStateFancy: {
+        alignItems: 'center',
+        paddingVertical: 30,
+        gap: 8,
+    },
+    emptyTextFancy: {
+        fontSize: 16,
+        color: theme.colors.textSecondary,
+        fontWeight: '500',
+    },
+    emptySubTextFancy: {
+        fontSize: 14,
+        color: theme.colors.textTertiary,
+    },
+    closeModalBtn: {
+        marginTop: 16,
+        alignItems: 'center',
+        paddingVertical: 12,
+    },
+    closeModalText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: theme.colors.textSecondary,
+    },
+    // Missing Styles for Account Book Header
+    accountBookHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12, // Ensure gap between icon and title
+    },
+    ledgerIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        backgroundColor: '#EEF2FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 4, // Backup gap
+    },
+    formTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: theme.colors.textPrimary,
+    },
+    formSubtitle: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+        marginTop: 2,
+    },
+    entryNumberBadge: {
+        backgroundColor: '#F3F4F6',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    entryNumberText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: theme.colors.textSecondary,
+    },
+    ledgerLine: {
+        height: 1,
+        backgroundColor: theme.colors.borderLight,
+        marginVertical: 16,
     },
 });

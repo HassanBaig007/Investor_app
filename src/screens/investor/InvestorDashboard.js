@@ -20,6 +20,7 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ProfileMenu from '../../components/ProfileMenu';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NotificationService from '../../services/notificationService';
 
 import {
     recentUpdates,
@@ -127,6 +128,13 @@ export default function InvestorDashboard({ navigation, onLogout }) {
         setShowProfileMenu(true);
     };
 
+    // Calculate pending invitations
+    const myInvitations = projects.flatMap(p =>
+        (p.pendingInvitations || [])
+            .filter(inv => inv.userId === currentUser.id)
+            .map(inv => ({ ...inv, project: p }))
+    );
+
     const handleInviteFriends = async () => {
         try {
             await Share.share({
@@ -135,6 +143,38 @@ export default function InvestorDashboard({ navigation, onLogout }) {
             });
         } catch (error) {
             Alert.alert('Error', 'Could not open share dialog');
+        }
+    };
+
+    const handleAcceptInvitation = (invitation) => {
+        const project = projects.find(p => p.id === invitation.project.id);
+        if (project) {
+            // Add to investors
+            if (!project.projectInvestors.includes(currentUser.id)) {
+                project.projectInvestors.push(currentUser.id);
+            }
+            // Set role
+            if (!project.investorRoles) project.investorRoles = {};
+            project.investorRoles[currentUser.id] = invitation.role;
+
+            // Remove invitation
+            project.pendingInvitations = project.pendingInvitations.filter(inv => inv.id !== invitation.id);
+
+            // Force refresh
+            setRefreshKey(prev => prev + 1);
+
+            NotificationService.notifyMemberAdded(currentUser.name, project.name);
+
+            Alert.alert('🎉 Welcome!', `You have joined ${project.name}`);
+        }
+    };
+
+    const handleDeclineInvitation = (invitation) => {
+        const project = projects.find(p => p.id === invitation.project.id);
+        if (project) {
+            // Remove invitation
+            project.pendingInvitations = project.pendingInvitations.filter(inv => inv.id !== invitation.id);
+            setRefreshKey(prev => prev + 1);
         }
     };
 
@@ -362,6 +402,8 @@ export default function InvestorDashboard({ navigation, onLogout }) {
             case 'home':
                 return (
                     <>
+
+
                         {/* Pending Approvals Section - HIGHLIGHTED */}
                         {pendingApprovals.length > 0 ? (
                             <View style={styles.approvalsSection}>
@@ -447,6 +489,45 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                         <Text style={styles.noActionsBadgeText}>0 Pending</Text>
                                     </View>
                                 </LinearGradient>
+                            </View>
+                        )}
+
+                        {/* Project Invitations Section */}
+                        {myInvitations.length > 0 && (
+                            <View style={styles.invitationsSection}>
+                                <LinearGradient
+                                    colors={['#EEF2FF', '#E0E7FF']}
+                                    style={styles.invitationsHeader}
+                                >
+                                    <View style={styles.sectionHeaderRow}>
+                                        <MaterialCommunityIcons name="email-fast-outline" size={20} color="#5B5CFF" />
+                                        <Text style={styles.invitationsTitle}>Project Invitations ({myInvitations.length})</Text>
+                                    </View>
+                                </LinearGradient>
+                                {myInvitations.map(invitation => (
+                                    <View key={invitation.id} style={styles.invitationCard}>
+                                        <View style={styles.invitationInfo}>
+                                            <Text style={styles.invitationProjectName}>{invitation.project.name}</Text>
+                                            <Text style={styles.invitationRole}>
+                                                Invited as <Text style={{ fontWeight: '700' }}>{invitation.role === 'active' ? 'Active Member' : 'Passive Member'}</Text>
+                                            </Text>
+                                        </View>
+                                        <View style={styles.invitationActions}>
+                                            <TouchableOpacity
+                                                style={styles.declineBtn}
+                                                onPress={() => handleDeclineInvitation(invitation)}
+                                            >
+                                                <Text style={styles.declineBtnText}>Decline</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={styles.acceptBtn}
+                                                onPress={() => handleAcceptInvitation(invitation)}
+                                            >
+                                                <Text style={styles.acceptBtnText}>Accept</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                ))}
                             </View>
                         )}
 
@@ -2324,5 +2405,73 @@ const styles = StyleSheet.create({
     newsItemTime: {
         fontSize: 11,
         color: theme.colors.textTertiary,
+    },
+    // Invitations Styles
+    invitationsSection: {
+        marginBottom: 20,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 16,
+        overflow: 'hidden',
+        ...theme.shadows.soft,
+    },
+    invitationsHeader: {
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E7FF',
+    },
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    invitationsTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#5B5CFF',
+        marginLeft: 8,
+    },
+    invitationCard: {
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
+    },
+    invitationInfo: {
+        marginBottom: 4,
+    },
+    invitationProjectName: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: theme.colors.textPrimary,
+        marginBottom: 4,
+    },
+    invitationRole: {
+        fontSize: 14,
+        color: theme.colors.textSecondary,
+    },
+    invitationActions: {
+        flexDirection: 'row',
+        marginTop: 12,
+        gap: 12,
+    },
+    acceptBtn: {
+        flex: 1,
+        backgroundColor: '#5B5CFF',
+        paddingVertical: 10,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    acceptBtnText: {
+        color: 'white',
+        fontWeight: '600',
+    },
+    declineBtn: {
+        flex: 1,
+        backgroundColor: '#F3F4F6',
+        paddingVertical: 10,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    declineBtnText: {
+        color: theme.colors.textSecondary,
+        fontWeight: '600',
     },
 });
