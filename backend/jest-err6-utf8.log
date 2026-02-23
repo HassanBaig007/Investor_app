@@ -1,0 +1,396 @@
+﻿node.exe : FAIL src/uploads/uploads.controller.spec.ts
+At C:\Users\Hassa\AppData\Roaming\npm\npx.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npx-cli.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL src/upload...troller.spec.ts:Strin 
+   g) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  ΓùÅ UploadsController ΓÇ║ uploadFile ΓÇ║ throws BadRequestException if no file is 
+provided
+
+    expect(received).toThrow(expected)
+
+    Expected constructor: BadRequestException
+    Received constructor: TypeError
+
+    Received message: "Cannot read properties of undefined (reading 'headers')"
+
+        [0m [90m 37 |[39m   uploadFile([33m@[39m[33mReq[39m() req[33m:[39m 
+[33mRequest[39m[33m,[39m [33m@[39m[33mUploadedFile[39m() file[33m:[39m 
+[33mExpress[39m[33m.[39m[33mMulter[39m[33m.[39m[33mFile[39m) {
+         [90m 38 |[39m     [36mconst[39m proto [33m=[39m
+        [31m[1m>[22m[39m[90m 39 |[39m       
+(req[33m.[39mheaders[[32m'x-forwarded-proto'[39m] [36mas[39m string) 
+[33m||[39m req[33m.[39mprotocol [33m||[39m [32m'http'[39m[33m;[39m
+         [90m    |[39m            [31m[1m^[22m[39m
+         [90m 40 |[39m     [36mconst[39m host [33m=[39m
+         [90m 41 |[39m       (req[33m.[39mheaders[[32m'x-forwarded-host'[39m] 
+[36mas[39m string) [33m||[39m
+         [90m 42 |[39m       req[33m.[39m[36mget[39m([32m'host'[39m) 
+[33m||[39m[0m
+
+      at UploadsController.uploadFile (uploads/uploads.controller.ts:39:12)
+      at uploads/uploads.controller.spec.ts:25:31
+      at Object.<anonymous> (../node_modules/expect/build/index.js:1824:9)
+      at Object.throwingMatcher [as toThrow] 
+(../node_modules/expect/build/index.js:2235:93)
+      at Object.<anonymous> (uploads/uploads.controller.spec.ts:25:61)
+      at Object.<anonymous> (uploads/uploads.controller.spec.ts:25:61)
+
+  ΓùÅ UploadsController ΓÇ║ uploadFile ΓÇ║ returns the configured file path if file 
+is provided
+
+    TypeError: Cannot read properties of undefined (reading 'x-forwarded-proto')
+
+    [0m [90m 37 |[39m   uploadFile([33m@[39m[33mReq[39m() req[33m:[39m 
+[33mRequest[39m[33m,[39m [33m@[39m[33mUploadedFile[39m() file[33m:[39m 
+[33mExpress[39m[33m.[39m[33mMulter[39m[33m.[39m[33mFile[39m) {
+     [90m 38 |[39m     [36mconst[39m proto [33m=[39m
+    [31m[1m>[22m[39m[90m 39 |[39m       
+(req[33m.[39mheaders[[32m'x-forwarded-proto'[39m] [36mas[39m string) 
+[33m||[39m req[33m.[39mprotocol [33m||[39m [32m'http'[39m[33m;[39m
+     [90m    |[39m                   [31m[1m^[22m[39m
+     [90m 40 |[39m     [36mconst[39m host [33m=[39m
+     [90m 41 |[39m       (req[33m.[39mheaders[[32m'x-forwarded-host'[39m] 
+[36mas[39m string) [33m||[39m
+     [90m 42 |[39m       req[33m.[39m[36mget[39m([32m'host'[39m) 
+[33m||[39m[0m
+
+      at UploadsController.uploadFile (uploads/uploads.controller.ts:39:19)
+      at Object.<anonymous> (uploads/uploads.controller.spec.ts:30:33)
+
+FAIL src/users/users.service.spec.ts
+  ΓùÅ UsersService ΓÇ║ deleteAccount ΓÇ║ anonymizes PII and triggers cascading 
+project removal
+
+    TypeError: this.notificationModel.deleteMany is not a function
+
+    [0m [90m 201 |[39m
+     [90m 202 |[39m     [90m// Remove user notifications (recipient inbox) after 
+deletion[39m
+    [31m[1m>[22m[39m[90m 203 |[39m     [36mawait[39m 
+[36mthis[39m[33m.[39mnotificationModel[33m.[39mdeleteMany({ 
+recipient[33m:[39m user[33m.[39m_id } [36mas[39m any)[33m;[39m
+     [90m     |[39m                                  [31m[1m^[22m[39m
+     [90m 204 |[39m
+     [90m 205 |[39m     [36mreturn[39m { deleted[33m:[39m [36mtrue[39m 
+}[33m;[39m
+     [90m 206 |[39m   }[0m
+
+      at UsersService.deleteAccount (users/users.service.ts:203:34)
+      at Object.<anonymous> (users/users.service.spec.ts:137:22)
+
+FAIL src/notifications/notifications.service.spec.ts
+  ΓùÅ NotificationService ΓÇ║ sendPush ΓÇ║ returns early and creates DB record if 
+user has no valid push token
+
+    BSONError: input must be a 24 character hex string, 12 byte Uint8Array, or an 
+integer
+
+    [0m [90m 34 |[39m     [90m// 1. Create Notification in DB[39m
+     [90m 35 |[39m     [36mconst[39m notification [33m=[39m [36mnew[39m 
+[36mthis[39m[33m.[39mnotificationModel({
+    [31m[1m>[22m[39m[90m 36 |[39m       recipient[33m:[39m [36mnew[39m 
+[33mTypes[39m[33m.[39m[33mObjectId[39m(recipientId)[33m,[39m
+     [90m    |[39m                  [31m[1m^[22m[39m
+     [90m 37 |[39m       title[33m,[39m
+     [90m 38 |[39m       body[33m,[39m
+     [90m 39 |[39m       payload[33m:[39m data[33m,[39m[0m
+
+      at new ObjectId (../node_modules/bson/src/objectid.ts:113:15)
+      at NotificationService.sendPush (notifications/notifications.service.ts:36:18)
+      at Object.<anonymous> (notifications/notifications.service.spec.ts:85:36)
+
+  ΓùÅ NotificationService ΓÇ║ sendPush ΓÇ║ sends fetch request to Expo and returns 
+success
+
+    BSONError: input must be a 24 character hex string, 12 byte Uint8Array, or an 
+integer
+
+    [0m [90m 34 |[39m     [90m// 1. Create Notification in DB[39m
+     [90m 35 |[39m     [36mconst[39m notification [33m=[39m [36mnew[39m 
+[36mthis[39m[33m.[39mnotificationModel({
+    [31m[1m>[22m[39m[90m 36 |[39m       recipient[33m:[39m [36mnew[39m 
+[33mTypes[39m[33m.[39m[33mObjectId[39m(recipientId)[33m,[39m
+     [90m    |[39m                  [31m[1m^[22m[39m
+     [90m 37 |[39m       title[33m,[39m
+     [90m 38 |[39m       body[33m,[39m
+     [90m 39 |[39m       payload[33m:[39m data[33m,[39m[0m
+
+      at new ObjectId (../node_modules/bson/src/objectid.ts:113:15)
+      at NotificationService.sendPush (notifications/notifications.service.ts:36:18)
+      at Object.<anonymous> (notifications/notifications.service.spec.ts:100:36)
+
+  ΓùÅ NotificationService ΓÇ║ sendPush ΓÇ║ handles HTTP error responses from Expo API
+
+    BSONError: input must be a 24 character hex string, 12 byte Uint8Array, or an 
+integer
+
+    [0m [90m 34 |[39m     [90m// 1. Create Notification in DB[39m
+     [90m 35 |[39m     [36mconst[39m notification [33m=[39m [36mnew[39m 
+[36mthis[39m[33m.[39mnotificationModel({
+    [31m[1m>[22m[39m[90m 36 |[39m       recipient[33m:[39m [36mnew[39m 
+[33mTypes[39m[33m.[39m[33mObjectId[39m(recipientId)[33m,[39m
+     [90m    |[39m                  [31m[1m^[22m[39m
+     [90m 37 |[39m       title[33m,[39m
+     [90m 38 |[39m       body[33m,[39m
+     [90m 39 |[39m       payload[33m:[39m data[33m,[39m[0m
+
+      at new ObjectId (../node_modules/bson/src/objectid.ts:113:15)
+      at NotificationService.sendPush (notifications/notifications.service.ts:36:18)
+      at Object.<anonymous> (notifications/notifications.service.spec.ts:123:36)
+
+  ΓùÅ NotificationService ΓÇ║ sendPush ΓÇ║ catches network exceptions during fetch
+
+    BSONError: input must be a 24 character hex string, 12 byte Uint8Array, or an 
+integer
+
+    [0m [90m 34 |[39m     [90m// 1. Create Notification in DB[39m
+     [90m 35 |[39m     [36mconst[39m notification [33m=[39m [36mnew[39m 
+[36mthis[39m[33m.[39mnotificationModel({
+    [31m[1m>[22m[39m[90m 36 |[39m       recipient[33m:[39m [36mnew[39m 
+[33mTypes[39m[33m.[39m[33mObjectId[39m(recipientId)[33m,[39m
+     [90m    |[39m                  [31m[1m^[22m[39m
+     [90m 37 |[39m       title[33m,[39m
+     [90m 38 |[39m       body[33m,[39m
+     [90m 39 |[39m       payload[33m:[39m data[33m,[39m[0m
+
+      at new ObjectId (../node_modules/bson/src/objectid.ts:113:15)
+      at NotificationService.sendPush (notifications/notifications.service.ts:36:18)
+      at Object.<anonymous> (notifications/notifications.service.spec.ts:134:36)
+
+FAIL src/users/users.controller.spec.ts
+  ΓùÅ UsersController ΓÇ║ updateSettings ΓÇ║ delegates to usersService.updateSettings
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    - Expected
+    + Received
+
+      "u1",
+      Object {
+    +   "biometricEnabled": false,
+    +   "currency": "INR",
+    +   "darkMode": true,
+    +   "language": "en",
+    +   "notifications": Object {
+    +     "approvalReminders": true,
+    +     "emailEnabled": true,
+    +     "pushEnabled": true,
+    +     "reportAlerts": true,
+    +   },
+        "theme": "dark",
+      },
+
+    Number of calls: 1
+
+    [0m [90m 49 |[39m       [36mconst[39m result [33m=[39m [36mawait[39m 
+controller[33m.[39mupdateSettings({ user[33m:[39m mockUser }[33m,[39m 
+dto)[33m;[39m
+     [90m 50 |[39m
+    [31m[1m>[22m[39m[90m 51 |[39m       expect(mockUsersService[33m.[39mupdat
+eSettings)[33m.[39mtoHaveBeenCalledWith([32m'u1'[39m[33m,[39m dto)[33m;[39m
+     [90m    |[39m                                               
+[31m[1m^[22m[39m
+     [90m 52 |[39m       expect(result)[33m.[39mtoEqual({ _id[33m:[39m 
+[32m'u1'[39m[33m,[39m settings[33m:[39m dto })[33m;[39m
+     [90m 53 |[39m     })[33m;[39m
+     [90m 54 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (users/users.controller.spec.ts:51:47)
+
+  ΓùÅ UsersController ΓÇ║ updateNotificationPrefs ΓÇ║ delegates to 
+usersService.updateNotificationPrefs
+
+    TypeError: controller.updateNotificationPrefs is not a function
+
+    [0m [90m 65 |[39m       mockUsersService[33m.[39mupdateNotificationPrefs[33
+m.[39mmockResolvedValue(mockResponse)[33m;[39m
+     [90m 66 |[39m
+    [31m[1m>[22m[39m[90m 67 |[39m       [36mconst[39m result [33m=[39m 
+[36mawait[39m controller[33m.[39mupdateNotificationPrefs({ user[33m:[39m 
+mockUser }[33m,[39m dto)[33m;[39m
+     [90m    |[39m                                       [31m[1m^[22m[39m
+     [90m 68 |[39m
+     [90m 69 |[39m       expect(mockUsersService[33m.[39mupdateNotificationPrefs)
+[33m.[39mtoHaveBeenCalledWith([32m'u1'[39m[33m,[39m dto)[33m;[39m
+     [90m 70 |[39m       
+expect(result)[33m.[39mtoEqual(mockResponse)[33m;[39m[0m
+
+      at Object.<anonymous> (users/users.controller.spec.ts:67:39)
+
+PASS src/app.controller.spec.ts
+PASS src/admin/admin.controller.spec.ts
+PASS src/admin/admin.service.spec.ts
+PASS src/finance/finance.service.spec.ts
+FAIL src/modifications/modifications.controller.spec.ts
+  ΓùÅ ModificationsController ΓÇ║ createRequest ΓÇ║ delegates to 
+modificationsService.createRequest
+
+    TypeError: controller.createRequest is not a function
+
+    [0m [90m 35 |[39m       
+mockModificationsService[33m.[39mcreateRequest[33m.[39mmockResolvedValue({ 
+_id[33m:[39m [32m'm1'[39m[33m,[39m [33m...[39mdto })[33m;[39m
+     [90m 36 |[39m
+    [31m[1m>[22m[39m[90m 37 |[39m       [36mconst[39m result [33m=[39m 
+[36mawait[39m controller[33m.[39mcreateRequest(mockReq[33m,[39m dto)[33m;[39m
+     [90m    |[39m                                       [31m[1m^[22m[39m
+     [90m 38 |[39m
+     [90m 39 |[39m       expect(mockModificationsService[33m.[39mcreateRequest)[
+33m.[39mtoHaveBeenCalledWith([32m'u1'[39m[33m,[39m dto)[33m;[39m
+     [90m 40 |[39m       expect(result)[33m.[39mtoEqual({ _id[33m:[39m 
+[32m'm1'[39m[33m,[39m [33m...[39mdto })[33m;[39m[0m
+
+      at Object.<anonymous> (modifications/modifications.controller.spec.ts:37:39)
+
+  ΓùÅ ModificationsController ΓÇ║ approveRequest ΓÇ║ delegates to 
+modificationsService.approveRequest
+
+    TypeError: controller.approveRequest is not a function
+
+    [0m [90m 52 |[39m       
+mockModificationsService[33m.[39mapproveRequest[33m.[39mmockResolvedValue({ 
+success[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m 53 |[39m
+    [31m[1m>[22m[39m[90m 54 |[39m       [36mconst[39m result [33m=[39m 
+[36mawait[39m controller[33m.[39mapproveRequest([32m'm1'[39m[33m,[39m 
+mockReq[33m,[39m dto)[33m;[39m
+     [90m    |[39m                                       [31m[1m^[22m[39m
+     [90m 55 |[39m
+     [90m 56 |[39m       expect(mockModificationsService[33m.[39mapproveRequest)
+[33m.[39mtoHaveBeenCalledWith([32m'm1'[39m[33m,[39m {
+     [90m 57 |[39m         userId[33m:[39m [32m'u1'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (modifications/modifications.controller.spec.ts:54:39)
+
+PASS src/projects/projects.service.spec.ts
+PASS src/auth/auth.service.spec.ts
+FAIL src/projects/projects.controller.spec.ts
+  ΓùÅ ProjectsController ΓÇ║ create ΓÇ║ delegates to projectsService.create
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    - Expected
+    + Received
+
+    - "u1",
+    + {"title": "New Project"},
+      Object {
+    -   "title": "New Project",
+    +   "userId": "u1",
+      },
+
+    Number of calls: 1
+
+    [0m [90m 47 |[39m       [36mconst[39m result [33m=[39m [36mawait[39m 
+controller[33m.[39mcreate(mockReq[33m,[39m dto)[33m;[39m
+     [90m 48 |[39m
+    [31m[1m>[22m[39m[90m 49 |[39m       expect(mockProjectsService[33m.[39mcr
+eate)[33m.[39mtoHaveBeenCalledWith([32m'u1'[39m[33m,[39m dto)[33m;[39m
+     [90m    |[39m                                          [31m[1m^[22m[39m
+     [90m 50 |[39m       expect(result)[33m.[39mtoEqual({ _id[33m:[39m 
+[32m'p1'[39m[33m,[39m [33m...[39mdto })[33m;[39m
+     [90m 51 |[39m     })[33m;[39m
+     [90m 52 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (projects/projects.controller.spec.ts:49:42)
+
+  ΓùÅ ProjectsController ΓÇ║ acceptInvitation ΓÇ║ delegates to 
+projectsService.acceptInvitation
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    Expected: "p1", "u1", "u1"
+    Received: {"user": {"userId": "u1"}}, undefined
+
+    Number of calls: 1
+
+    [0m [90m 94 |[39m       [36mconst[39m result [33m=[39m [36mawait[39m 
+controller[33m.[39macceptInvitation([32m'p1'[39m[33m,[39m mockReq[33m,[39m 
+dto)[33m;[39m
+     [90m 95 |[39m
+    [31m[1m>[22m[39m[90m 96 |[39m       expect(mockProjectsService[33m.[39mac
+ceptInvitation)[33m.[39mtoHaveBeenCalledWith([32m'p1'[39m[33m,[39m 
+[32m'u1'[39m[33m,[39m [32m'u1'[39m)[33m;[39m
+     [90m    |[39m                                                    
+[31m[1m^[22m[39m
+     [90m 97 |[39m       expect(result)[33m.[39mtoEqual({ success[33m:[39m 
+[36mtrue[39m })[33m;[39m
+     [90m 98 |[39m     })[33m;[39m
+     [90m 99 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (projects/projects.controller.spec.ts:96:52)
+
+FAIL src/finance/finance.controller.spec.ts
+  ΓùÅ FinanceController ΓÇ║ createSpending ΓÇ║ delegates to 
+financeService.createSpending
+
+    TypeError: controller.createSpending is not a function
+
+    [0m [90m 36 |[39m       
+mockFinanceService[33m.[39mcreateSpending[33m.[39mmockResolvedValue({ 
+_id[33m:[39m [32m's1'[39m[33m,[39m [33m...[39mdto })[33m;[39m
+     [90m 37 |[39m
+    [31m[1m>[22m[39m[90m 38 |[39m       [36mconst[39m result [33m=[39m 
+[36mawait[39m controller[33m.[39mcreateSpending(mockReq[33m,[39m 
+dto)[33m;[39m
+     [90m    |[39m                                       [31m[1m^[22m[39m
+     [90m 39 |[39m
+     [90m 40 |[39m       expect(mockFinanceService[33m.[39mcreateSpending)[33m.
+[39mtoHaveBeenCalledWith([32m'u1'[39m[33m,[39m dto)[33m;[39m
+     [90m 41 |[39m       expect(result)[33m.[39mtoEqual({ _id[33m:[39m 
+[32m's1'[39m[33m,[39m [33m...[39mdto })[33m;[39m[0m
+
+      at Object.<anonymous> (finance/finance.controller.spec.ts:38:39)
+
+  ΓùÅ FinanceController ΓÇ║ approveSpending ΓÇ║ delegates to 
+financeService.approveSpending passing the approval properties
+
+    TypeError: controller.approveSpending is not a function
+
+    [0m [90m 53 |[39m       
+mockFinanceService[33m.[39mapproveSpending[33m.[39mmockResolvedValue({ 
+success[33m:[39m [36mtrue[39m })[33m;[39m
+     [90m 54 |[39m
+    [31m[1m>[22m[39m[90m 55 |[39m       [36mconst[39m result [33m=[39m 
+[36mawait[39m controller[33m.[39mapproveSpending([32m's1'[39m[33m,[39m 
+mockReq[33m,[39m dto)[33m;[39m
+     [90m    |[39m                                       [31m[1m^[22m[39m
+     [90m 56 |[39m
+     [90m 57 |[39m       expect(mockFinanceService[33m.[39mapproveSpending)[33m.
+[39mtoHaveBeenCalledWith([32m's1'[39m[33m,[39m {
+     [90m 58 |[39m         userId[33m:[39m [32m'u1'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (finance/finance.controller.spec.ts:55:39)
+
+  ΓùÅ FinanceController ΓÇ║ allocateCapital ΓÇ║ delegates to 
+financeService.applyManualLedgerEntry
+
+    TypeError: controller.allocateCapital is not a function
+
+    [0m [90m 75 |[39m       
+mockFinanceService[33m.[39mapplyManualLedgerEntry[33m.[39mmockResolvedValue({ 
+_id[33m:[39m [32m'l1'[39m })[33m;[39m
+     [90m 76 |[39m
+    [31m[1m>[22m[39m[90m 77 |[39m       [36mconst[39m result [33m=[39m 
+[36mawait[39m controller[33m.[39mallocateCapital(mockReq[33m,[39m 
+dto)[33m;[39m
+     [90m    |[39m                                       [31m[1m^[22m[39m
+     [90m 78 |[39m
+     [90m 79 |[39m       expect(mockFinanceService[33m.[39mapplyManualLedgerEntry
+)[33m.[39mtoHaveBeenCalledWith([32m'u1'[39m[33m,[39m dto)[33m;[39m
+     [90m 80 |[39m       expect(result)[33m.[39mtoEqual({ _id[33m:[39m 
+[32m'l1'[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (finance/finance.controller.spec.ts:77:39)
+
+PASS src/auth/auth.controller.spec.ts
+PASS src/modifications/modifications.service.spec.ts
+
+Test Suites: 7 failed, 8 passed, 15 total
+Tests:       16 failed, 117 passed, 133 total
+Snapshots:   0 total
+Time:        5.764 s, estimated 6 s
+Ran all test suites matching src.

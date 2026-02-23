@@ -1,0 +1,215 @@
+﻿node.exe : PASS src/uploads/uploads.controller.spec.ts
+At C:\Users\Hassa\AppData\Roaming\npm\npx.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npx-cli.js" 
+$args
++     
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (PASS src/upload... 
+   troller.spec.ts:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+PASS src/app.controller.spec.ts
+FAIL src/users/users.service.spec.ts
+  ΓùÅ UsersService ΓÇ║ should be defined
+
+    Nest can't resolve dependencies of the UsersService 
+(UserModel, ?, SpendingModel, ModificationRequestModel, 
+NotificationModel). Please make sure that the argument 
+"ProjectModel" at index [1] is available in the RootTestModule 
+context.
+
+    Potential solutions:
+    - Is RootTestModule a valid NestJS module?
+    - If "ProjectModel" is a provider, is it part of the 
+current RootTestModule?
+    - If "ProjectModel" is exported from a separate @Module, is 
+that module imported within RootTestModule?
+      @Module({
+        imports: [ /* the Module containing "ProjectModel" */ ]
+      })
+
+    For more common dependency resolution issues, see: 
+https://docs.nestjs.com/faq/common-errors
+
+    [0m [90m  7 |[39m
+     [90m  8 |[39m   beforeEach([36masync[39m () 
+[33m=>[39m {
+    [31m[1m>[22m[39m[90m  9 |[39m     [36mconst[39m 
+module[33m:[39m [33mTestingModule[39m [33m=[39m 
+[36mawait[39m [33mTest[39m[33m.[39mcreateTestingModule({
+     [90m    |[39m                                   
+[31m[1m^[22m[39m
+     [90m 10 |[39m       providers[33m:[39m [
+     [90m 11 |[39m         [33mUsersService[39m[33m,[39m
+     [90m 12 |[39m         { provide[33m:[39m 
+getModelToken([32m'User'[39m)[33m,[39m useValue[33m:[39m 
+{} }[33m,[39m[0m
+
+      at TestingInjector.lookupComponentInParentModules 
+(../node_modules/@nestjs/core/injector/injector.js:290:19)
+      at TestingInjector.resolveComponentWrapper 
+(../node_modules/@nestjs/testing/testing-injector.js:19:45)
+      at resolveParam 
+(../node_modules/@nestjs/core/injector/injector.js:140:38)
+          at async Promise.all (index 1)
+      at TestingInjector.resolveConstructorParams 
+(../node_modules/@nestjs/core/injector/injector.js:169:27)
+      at TestingInjector.loadInstance 
+(../node_modules/@nestjs/core/injector/injector.js:75:13)
+      at TestingInjector.loadProvider 
+(../node_modules/@nestjs/core/injector/injector.js:103:9)
+      at 
+../node_modules/@nestjs/core/injector/instance-loader.js:56:13
+          at async Promise.all (index 3)
+      at TestingInstanceLoader.createInstancesOfProviders 
+(../node_modules/@nestjs/core/injector/instance-loader.js:55:9)
+      at 
+../node_modules/@nestjs/core/injector/instance-loader.js:40:13
+          at async Promise.all (index 1)
+      at TestingInstanceLoader.createInstances 
+(../node_modules/@nestjs/core/injector/instance-loader.js:39:9)
+      at TestingInstanceLoader.createInstancesOfDependencies 
+(../node_modules/@nestjs/core/injector/instance-loader.js:22:13)
+      at TestingInstanceLoader.createInstancesOfDependencies 
+(../node_modules/@nestjs/testing/testing-instance-loader.js:9:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../
+node_modules/@nestjs/testing/testing-module.builder.js:118:9)
+      at TestingModuleBuilder.compile 
+(../node_modules/@nestjs/testing/testing-module.builder.js:74:9)
+      at Object.<anonymous> (users/users.service.spec.ts:9:35)
+
+PASS src/auth/auth.service.spec.ts (5.051 s)
+FAIL src/admin/admin.controller.spec.ts
+  ΓùÅ Test suite failed to run
+
+    [96msrc/admin/admin.controller.spec.ts[0m:[93m1[0m:[93m
+1[0m - [91merror[0m[90m TS1490: [0mFile appears to be 
+binary.
+
+FAIL src/notifications/notifications.service.spec.ts
+  ΓùÅ Test suite failed to run
+
+    Cannot find module './notifications.gateway' from 
+'notifications/notifications.service.spec.ts'
+
+    [0m [90m 2 |[39m [36mimport[39m { getModelToken } 
+[36mfrom[39m [32m'@nestjs/mongoose'[39m[33m;[39m
+     [90m 3 |[39m [36mimport[39m { 
+[33mNotificationsService[39m } [36mfrom[39m 
+[32m'./notifications.service'[39m[33m;[39m
+    [31m[1m>[22m[39m[90m 4 |[39m [36mimport[39m { 
+[33mNotificationsGateway[39m } [36mfrom[39m 
+[32m'./notifications.gateway'[39m[33m;[39m
+     [90m   |[39m [31m[1m^[22m[39m
+     [90m 5 |[39m
+     [90m 6 |[39m 
+describe([32m'NotificationsService'[39m[33m,[39m () 
+[33m=>[39m {
+     [90m 7 |[39m   [36mlet[39m service[33m:[39m 
+[33mNotificationsService[39m[33m;[39m[0m
+
+      at Resolver._throwModNotFoundError 
+(../node_modules/jest-resolve/build/index.js:863:11)
+      at Object.<anonymous> 
+(notifications/notifications.service.spec.ts:4:1)
+
+PASS src/auth/auth.controller.spec.ts (5.999 s)
+PASS src/admin/admin.service.spec.ts (6.152 s)
+PASS src/modifications/modifications.controller.spec.ts (6.212 
+s)
+PASS src/modifications/modifications.service.spec.ts (6.198 s)
+FAIL src/projects/projects.service.spec.ts (6.319 s)
+  ΓùÅ ProjectsService ΓÇ║ getRefId ΓÇ║ should handle object 
+with toHexString (ObjectId)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "bson-id"
+    Received: "[object Object]"
+
+    [0m [90m 45 |[39m
+     [90m 46 |[39m     it([32m'should handle object with 
+toHexString (ObjectId)'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 47 |[39m       
+expect(service[33m.[39mgetRefId({ toHexString[33m:[39m () 
+[33m=>[39m [32m'bson-id'[39m 
+}))[33m.[39mtoBe([32m'bson-id'[39m)[33m;[39m
+     [90m    |[39m                                            
+                      [31m[1m^[22m[39m
+     [90m 48 |[39m     })[33m;[39m
+     [90m 49 |[39m
+     [90m 50 |[39m     it([32m'should extract ._id or 
+.id'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:47:66)
+
+  ΓùÅ ProjectsService ΓÇ║ assertCanManageMembers ΓÇ║ should not 
+throw if user is a project-level project_admin inside investors 
+array
+
+    expect(received).not.toThrow()
+
+    Error name:    "ForbiddenException"
+    Error message: "Only project creator or admins can manage 
+members"
+
+        [0m [90m 1307 |[39m     [36mconst[39m creatorId 
+[33m=[39m [36mthis[39m[33m.[39mgetRefId(project[33m?[39m
+[33m.[39mcreatedBy)[33m;[39m
+         [90m 1308 |[39m     [36mif[39m (creatorId 
+[33m!==[39m actor[33m?[39m[33m.[39muserId) {
+        [31m[1m>[22m[39m[90m 1309 |[39m       
+[36mthrow[39m [36mnew[39m [33mForbiddenException[39m(
+         [90m      |[39m             [31m[1m^[22m[39m
+         [90m 1310 |[39m         [32m'Only project creator 
+or admins can manage members'[39m[33m,[39m
+         [90m 1311 |[39m       )[33m;[39m
+         [90m 1312 |[39m     }[0m
+
+      at ProjectsService.assertCanManageMembers 
+(projects/projects.service.ts:1309:13)
+      at projects/projects.service.spec.ts:136:17
+      at Object.<anonymous> 
+(../node_modules/expect/build/index.js:1824:9)
+      at Object.throwingMatcher [as toThrow] 
+(../node_modules/expect/build/index.js:2235:93)
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:137:13)
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:137:13)
+
+PASS src/finance/finance.service.spec.ts (6.4 s)
+PASS src/finance/finance.controller.spec.ts (6.557 s)
+PASS src/projects/projects.controller.spec.ts (6.743 s)
+FAIL src/users/users.controller.spec.ts
+  ΓùÅ Test suite failed to run
+
+    Cannot find module '../notifications/notifications.gateway' 
+from 'users/users.controller.spec.ts'
+
+    [0m [90m 3 |[39m [36mimport[39m { 
+[33mUsersController[39m } [36mfrom[39m 
+[32m'./users.controller'[39m[33m;[39m
+     [90m 4 |[39m [36mimport[39m { [33mUsersService[39m } 
+[36mfrom[39m [32m'./users.service'[39m[33m;[39m
+    [31m[1m>[22m[39m[90m 5 |[39m [36mimport[39m { 
+[33mNotificationsGateway[39m } [36mfrom[39m 
+[32m'../notifications/notifications.gateway'[39m[33m;[39m
+     [90m   |[39m [31m[1m^[22m[39m
+     [90m 6 |[39m
+     [90m 7 |[39m [90m// ΓöÇΓöÇΓöÇ Silence jose imports that 
+break Jest ΓöÇΓöÇΓöÇ[39m
+     [90m 8 |[39m 
+jest[33m.[39mmock([32m'jose'[39m[33m,[39m () [33m=>[39m 
+({[0m
+
+      at Resolver._throwModNotFoundError 
+(../node_modules/jest-resolve/build/index.js:863:11)
+      at Object.<anonymous> (users/users.controller.spec.ts:5:1)
+
+Test Suites: 5 failed, 10 passed, 15 total
+Tests:       3 failed, 98 passed, 101 total
+Snapshots:   0 total
+Time:        8.909 s
+Ran all test suites matching src.

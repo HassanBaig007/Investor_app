@@ -1,0 +1,93 @@
+﻿node.exe : FAIL test/projects.e2e-spec.ts
+At C:\Users\Hassa\AppData\Roaming\npm\npx.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npx-cli.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL test/projects.e2e-spec.ts:String)  
+   [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  ProjectsController (e2e)
+    ΓêÜ /api/projects (POST) - Create Project (38 ms)
+    ΓêÜ /api/projects (GET) - List Projects (15 ms)
+    ΓêÜ /api/projects/:id (GET) - Get Single Project (12 ms)
+    ΓêÜ /api/projects/:id (PUT) - Update Project (10 ms)
+    ├ù /api/projects/:id/invites (POST) - Invite Member (27 ms)
+    ├ù /api/projects/:id/invites/accept (POST) - Accept Invitation (16 ms)
+
+  ΓùÅ ProjectsController (e2e) ΓÇ║ /api/projects/:id/invites (POST) - Invite Member
+
+    expect(received).toHaveProperty(path, value)
+
+    Expected path: "success"
+    Received path: []
+
+    Expected value: true
+    Received value: {"__v": 2, "_id": "699bd3b2de725aff61c4ed3a", "createdAt": 
+"2026-02-23T04:12:34.075Z", "createdBy": "699bd3b1de725aff61c4ed30", 
+"currentValuation": 0, "description": "Updated description", "investors": [{"_id": 
+"699bd3b2de725aff61c4ed3b", "investedAmount": 0, "privacySettings": {"displayName": 
+"Project Admin", "isAnonymous": false}, "role": "active", "user": {"_id": 
+"699bd3b1de725aff61c4ed30", "email": "project-admin-e2e@splitflow.com", "name": 
+"Project Admin", "role": "investor"}}], "minInvestment": 50000, "name": "E2E Test 
+Project", "pendingInvitations": [{"_id": "699bd3b2de725aff61c4ed5b", "invitedAt": 
+"2026-02-23T04:12:34.146Z", "role": "passive", "userId": {"_id": 
+"699bd3b1de725aff61c4ed35", "email": "project-investor-e2e@splitflow.com", "name": 
+"Project Investor", "role": "investor"}}], "raisedAmount": 0, "riskLevel": "medium", 
+"status": "pending", "targetAmount": 1000000, "type": "real_estate", "updatedAt": 
+"2026-02-23T04:12:34.148Z", "valuationHistory": []}
+
+    [0m [90m 143 |[39m             [33m.[39mexpect([35m201[39m)[33m;[39m
+     [90m 144 |[39m
+    [31m[1m>[22m[39m[90m 145 |[39m         
+expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32m'success'[39m[33m,[39m 
+[36mtrue[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 146 |[39m     })[33m;[39m
+     [90m 147 |[39m
+     [90m 148 |[39m     it([32m'/api/projects/:id/invites/accept (POST) - Accept 
+Invitation'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (projects.e2e-spec.ts:145:26)
+
+  ΓùÅ ProjectsController (e2e) ΓÇ║ /api/projects/:id/invites/accept (POST) - Accept 
+Invitation
+
+    expect(received).toHaveProperty(path, value)
+
+    Expected path: "success"
+    Received path: []
+
+    Expected value: true
+    Received value: {"__v": 3, "_id": "699bd3b2de725aff61c4ed3a", "createdAt": 
+"2026-02-23T04:12:34.075Z", "createdBy": "699bd3b1de725aff61c4ed30", 
+"currentValuation": 0, "description": "Updated description", "investors": [{"_id": 
+"699bd3b2de725aff61c4ed3b", "investedAmount": 0, "privacySettings": {"displayName": 
+"Project Admin", "isAnonymous": false}, "role": "active", "user": {"_id": 
+"699bd3b1de725aff61c4ed30", "email": "project-admin-e2e@splitflow.com", "name": 
+"Project Admin", "role": "investor"}}, {"_id": "699bd3b2de725aff61c4ed6c", 
+"investedAmount": 0, "privacySettings": {"displayName": "Project Investor", 
+"isAnonymous": false}, "role": "passive", "user": {"_id": 
+"699bd3b1de725aff61c4ed35", "email": "project-investor-e2e@splitflow.com", "name": 
+"Project Investor", "role": "investor"}}], "minInvestment": 50000, "name": "E2E Test 
+Project", "pendingInvitations": [], "raisedAmount": 0, "riskLevel": "medium", 
+"status": "pending", "targetAmount": 1000000, "type": "real_estate", "updatedAt": 
+"2026-02-23T04:12:34.172Z", "valuationHistory": []}
+
+    [0m [90m 153 |[39m             [33m.[39mexpect([35m201[39m)[33m;[39m 
+[90m// Standard NestJS POST return code[39m
+     [90m 154 |[39m
+    [31m[1m>[22m[39m[90m 155 |[39m         
+expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32m'success'[39m[33m,[39m 
+[36mtrue[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 156 |[39m     })[33m;[39m
+     [90m 157 |[39m })[33m;[39m
+     [90m 158 |[39m[0m
+
+      at Object.<anonymous> (projects.e2e-spec.ts:155:26)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 4 passed, 6 total
+Snapshots:   0 total
+Time:        2.878 s, estimated 3 s
+Ran all test suites matching test/projects.e2e-spec.ts.

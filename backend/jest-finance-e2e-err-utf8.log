@@ -1,0 +1,96 @@
+﻿  console.warn
+    [approvals-debug] {
+      spendingId: new ObjectId('699bd64a70315357c07845df'),
+      eligibleInvestorIds: [ '699bd64970315357c0784573', '699bd64970315357c0784578' ],
+      approvalKeys: [ '699bd64970315357c0784573' ],
+      approvedBy: [],
+      waitingFor: [
+        { id: '699bd64970315357c0784573', name: 'Finance Admin' },
+        { id: '699bd64970315357c0784578', name: 'Finance Investor' }
+      ],
+      sampleApproval: {
+        status: 'rejected',
+        user: '699bd64970315357c0784573',
+        userName: 'Finance Admin',
+        date: 2026-02-23T04:23:38.247Z
+      }
+    }
+
+    [0m [90m 339 |[39m     [36mif[39m ([33m![39mmismatch) [36mreturn[39m[33m;[39m
+     [90m 340 |[39m
+    [31m[1m>[22m[39m[90m 341 |[39m     console[33m.[39mwarn([32m'[approvals-debug]'[39m[33m,[39m {
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 342 |[39m       spendingId[33m:[39m spending[33m?[39m[33m.[39m_id [33m||[39m spending[33m?[39m[33m.[39mid[33m,[39m
+     [90m 343 |[39m       eligibleInvestorIds[33m,[39m
+     [90m 344 |[39m       approvalKeys[33m:[39m [33mObject[39m[33m.[39mkeys(enrichedApprovals)[33m,[39m[0m
+
+      at FinanceService.logApprovalMismatchIfNeeded (../src/finance/finance.service.ts:341:13)
+      at FinanceService.enrichSpendingForResponse (../src/finance/finance.service.ts:421:10)
+      at FinanceService.buildSpendingResponse (../src/finance/finance.service.ts:560:17)
+
+node.exe : FAIL test/finance.e2e-spec.ts
+At C:\Users\Hassa\AppData\Roaming\npm\npx.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npx-cli.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL test/finance.e2e-spec.ts:String) [ 
+   ], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  FinanceController (e2e)
+    ΓêÜ /api/finance/spendings (POST) - Create Spending Request (33 ms)
+    ΓêÜ /api/finance/spendings (GET) - List Spendings (22 ms)
+    ΓêÜ /api/finance/spendings/:id/vote (POST) - Investor Approves Spending (21 ms)
+    ΓêÜ /api/finance/spendings/:id/vote (POST) - Admin Approves Spending (Redundant) 
+(9 ms)
+    ΓêÜ /api/finance/spendings (POST) - Create another Spending Request for 
+rejection (21 ms)
+    ├ù /api/finance/spendings/:id/vote (POST) - Admin Rejects Spending (70 ms)
+
+  ΓùÅ FinanceController (e2e) ΓÇ║ /api/finance/spendings/:id/vote (POST) - Admin 
+Rejects Spending
+
+    expect(received).toHaveProperty(path)
+
+    Expected path: "rejections"
+    Received path: []
+
+    Received value: {"__v": 0, "_id": "699bd64a70315357c07845df", "addedBy": 
+"699bd64970315357c0784573", "addedById": "699bd64970315357c0784573", "addedByName": 
+"Finance Admin", "amount": 500, "approvalSummary": {"approvedBy": [], 
+"approvedRequiredCount": 0, "awaitingUserIds": ["699bd64970315357c0784578"], 
+"pendingRequiredCount": 2, "requiredApproverCount": 2, "requiredApproverIds": 
+["699bd64970315357c0784573", "699bd64970315357c0784578"], "votedRequiredCount": 1, 
+"waitingFor": [{"id": "699bd64970315357c0784573", "name": "Finance Admin"}, {"id": 
+"699bd64970315357c0784578", "name": "Finance Investor"}]}, "approvals": 
+{"699bd64970315357c0784573": {"date": "2026-02-23T04:23:38.247Z", "status": 
+"rejected", "user": "699bd64970315357c0784573", "userName": "Finance Admin"}}, 
+"category": "Service", "createdAt": "2026-02-23T04:23:38.228Z", "date": 
+"2026-02-23T04:23:38.217Z", "description": "E2E Office Supplies", "detailDisplay": 
+{"ledgerName": "", "paidToPerson": "Office Clerk", "paidToPlace": "Store", 
+"productName": "", "subLedger": ""}, "detailMode": "service", "fundedBy": 
+"699bd64970315357c0784573", "fundedById": "699bd64970315357c0784573", 
+"fundedByName": "Finance Admin", "id": "699bd64a70315357c07845df", "ledgerId": null, 
+"ledgerName": null, "ownerUserId": "699bd64970315357c0784573", "paidTo": {"person": 
+"Office Clerk", "place": "Store"}, "productName": null, "project": 
+"699bd64a70315357c078457d", "status": "rejected", "time": "09:53 AM", "updatedAt": 
+"2026-02-23T04:23:38.248Z"}
+
+    [0m [90m 226 |[39m         [90m// Admin rejection typically overrides 
+immediately or registers negative vote.[39m
+     [90m 227 |[39m         
+expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32m'status'[39m[33m,[39m 
+[32m'rejected'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 228 |[39m         expect(res[33m.[39mbody)[33m.[39
+mtoHaveProperty([32m'rejections'[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 229 |[39m     })[33m;[39m
+     [90m 230 |[39m })[33m;[39m
+     [90m 231 |[39m[0m
+
+      at Object.<anonymous> (finance.e2e-spec.ts:228:26)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 5 passed, 6 total
+Snapshots:   0 total
+Time:        3.003 s, estimated 4 s
+Ran all test suites matching test/finance.e2e-spec.ts.

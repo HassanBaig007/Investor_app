@@ -1,0 +1,99 @@
+﻿node.exe : PASS src/notifications/notifications.service.spec.ts
+At C:\Users\Hassa\AppData\Roaming\npm\npx.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npx-cli.js" 
+$args
++     
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (PASS src/notifi... 
+   service.spec.ts:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+PASS src/users/users.service.spec.ts
+FAIL src/users/users.controller.spec.ts
+  ΓùÅ UsersController ΓÇ║ should be defined
+
+    Nest can't resolve dependencies of the UsersController 
+(UsersService, ?). Please make sure that the argument 
+AuthService at index [1] is available in the RootTestModule 
+context.
+
+    Potential solutions:
+    - Is RootTestModule a valid NestJS module?
+    - If AuthService is a provider, is it part of the current 
+RootTestModule?
+    - If AuthService is exported from a separate @Module, is 
+that module imported within RootTestModule?
+      @Module({
+        imports: [ /* the Module containing AuthService */ ]
+      })
+
+    For more common dependency resolution issues, see: 
+https://docs.nestjs.com/faq/common-errors
+
+    [0m [90m 14 |[39m
+     [90m 15 |[39m   beforeEach([36masync[39m () 
+[33m=>[39m {
+    [31m[1m>[22m[39m[90m 16 |[39m     [36mconst[39m 
+module[33m:[39m [33mTestingModule[39m [33m=[39m 
+[36mawait[39m [33mTest[39m[33m.[39mcreateTestingModule({
+     [90m    |[39m                                   
+[31m[1m^[22m[39m
+     [90m 17 |[39m       controllers[33m:[39m 
+[[33mUsersController[39m][33m,[39m
+     [90m 18 |[39m       providers[33m:[39m [
+     [90m 19 |[39m         { provide[33m:[39m 
+[33mUsersService[39m[33m,[39m useValue[33m:[39m {} 
+}[33m,[39m[0m
+
+      at TestingInjector.lookupComponentInParentModules 
+(../node_modules/@nestjs/core/injector/injector.js:290:19)
+      at TestingInjector.resolveComponentWrapper 
+(../node_modules/@nestjs/testing/testing-injector.js:19:45)
+      at resolveParam 
+(../node_modules/@nestjs/core/injector/injector.js:140:38)
+          at async Promise.all (index 1)
+      at TestingInjector.resolveConstructorParams 
+(../node_modules/@nestjs/core/injector/injector.js:169:27)
+      at TestingInjector.loadInstance 
+(../node_modules/@nestjs/core/injector/injector.js:75:13)
+      at TestingInjector.loadController 
+(../node_modules/@nestjs/core/injector/injector.js:94:9)
+      at 
+../node_modules/@nestjs/core/injector/instance-loader.js:68:13
+          at async Promise.all (index 0)
+      at TestingInstanceLoader.createInstancesOfControllers 
+(../node_modules/@nestjs/core/injector/instance-loader.js:67:9)
+      at 
+../node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 1)
+      at TestingInstanceLoader.createInstances 
+(../node_modules/@nestjs/core/injector/instance-loader.js:39:9)
+      at TestingInstanceLoader.createInstancesOfDependencies 
+(../node_modules/@nestjs/core/injector/instance-loader.js:22:13)
+      at TestingInstanceLoader.createInstancesOfDependencies 
+(../node_modules/@nestjs/testing/testing-instance-loader.js:9:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../
+node_modules/@nestjs/testing/testing-module.builder.js:118:9)
+      at TestingModuleBuilder.compile 
+(../node_modules/@nestjs/testing/testing-module.builder.js:74:9)
+      at Object.<anonymous> 
+(users/users.controller.spec.ts:16:35)
+
+PASS src/app.controller.spec.ts
+PASS src/auth/auth.controller.spec.ts (5.559 s)
+PASS src/uploads/uploads.controller.spec.ts
+PASS src/projects/projects.service.spec.ts (5.804 s)
+PASS src/auth/auth.service.spec.ts
+PASS src/admin/admin.service.spec.ts (5.806 s)
+PASS src/modifications/modifications.controller.spec.ts (5.849 
+s)
+PASS src/modifications/modifications.service.spec.ts (5.871 s)
+PASS src/finance/finance.service.spec.ts (5.962 s)
+PASS src/finance/finance.controller.spec.ts (6.319 s)
+PASS src/projects/projects.controller.spec.ts (6.297 s)
+
+Test Suites: 1 failed, 13 passed, 14 total
+Tests:       1 failed, 102 passed, 103 total
+Snapshots:   0 total
+Time:        8.547 s
+Ran all test suites matching src.

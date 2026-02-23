@@ -1,0 +1,76 @@
+﻿node.exe : FAIL src/admin/ad
+min.controller.spec.ts
+At C:\Users\Hassa\AppData\Ro
+aming\npm\npx.ps1:24 char:5
++     & "node$exe"  "$basedi
+r/node_modules/npm/bin/npx-c
+li.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~
+    + CategoryInfo          
+    : NotSpecified: (FAIL   
+  src/admin/admin.control   
+ ler.spec.ts:String) [],    
+ RemoteException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 
+  AdminController
+    ΓêÜ should be defined 
+(17 ms)
+    getDashboardStats
+      ├ù delegates to 
+adminService.getStats() (8 
+ms)
+
+  ΓùÅ AdminController ΓÇ║ 
+getDashboardStats ΓÇ║ 
+delegates to 
+adminService.getStats()
+
+    TypeError: controller.ge
+tDashboardStats is not a 
+function
+
+    [0m [90m 35 |[39m    
+         mockAdminService[3
+3m.[39mgetStats[33m.[39mm
+ockResolvedValue(mockStats)
+[33m;[39m
+     [90m 36 |[39m
+    
+[31m[1m>[22m[39m[90m 
+37 |[39m             
+[36mconst[39m result 
+[33m=[39m [36mawait[39m 
+controller[33m.[39mgetDash
+boardStats()[33m;[39m
+     [90m    |[39m        
+                            
+         
+[31m[1m^[22m[39m
+     [90m 38 |[39m
+     [90m 39 |[39m        
+     expect(mockAdminService
+[33m.[39mgetStats)[33m.[
+39mtoHaveBeenCalled()[33m;
+[39m
+     [90m 40 |[39m        
+     expect(result)[33m.[3
+9mtoEqual(mockStats)[33m;[
+39m[0m
+
+      at Object.<anonymous> 
+(admin/admin.controller.spec
+.ts:37:45)
+
+Test Suites: 1 failed, 1 
+total
+Tests:       1 failed, 1 
+passed, 2 total
+Snapshots:   0 total
+Time:        2.758 s
+Ran all test suites 
+matching src/admin/admin.con
+troller.spec.ts.

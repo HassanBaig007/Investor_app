@@ -1,0 +1,19 @@
+{
+    "audit_date": "2026-02-14T12:03:36Z",
+    "files_modified": [
+        "Investor_app/src/services/api.js",
+        "Investor_app/src/screens/investor/CreateProjectInvestorScreen.js",
+        "backend/src/projects/projects.controller.ts",
+        "backend/src/main.ts",
+        "backend/src/projects/schemas/project.schema.ts"
+    ],
+    "p1_fixes_applied": 2,
+    "p2_fixes_applied": 3,
+    "p3_fixes_applied": 2,
+    "s1_hardening_applied": 1,
+    "s2_hardening_applied": 1,
+    "skipped_conflicts": [],
+    "new_issues_introduced": [],
+    "manual_review_required": [],
+    "overall_status": "CLEAN"
+}

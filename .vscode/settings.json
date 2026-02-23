@@ -1,0 +1,25 @@
+{
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/build/**",
+    "**/.gradle/**",
+    "**/android/build/**"
+  ],
+  "java.import.gradle.enabled": false,
+  "java.configuration.updateBuildConfiguration": "disabled",
+  "java.project.resourceFilters": [
+    "node_modules",
+    ".git",
+    ".svn",
+    "**/.settings",
+    "**/.gradle",
+    "**/build"
+  ],
+  "gradle.autoDetect": "off",
+  "gradle.nestedProjects": false,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/build": true
+  },
+  "codium.codeCompletion.enable": false
+}

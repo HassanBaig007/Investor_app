@@ -1,0 +1,202 @@
+﻿node.exe : FAIL test/auth.e2e-spec.ts
+At C:\Users\Hassa\AppData\Roaming\npm\npx.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npx-cli.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL test/auth.e2e-spec.ts:String) [],  
+   RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  AuthController (e2e)
+    ├ù /api/auth/register (POST) (40 ms)
+    ├ù /api/auth/login (POST) (13 ms)
+    ├ù /api/auth/profile (GET) - Success (6 ms)
+    ├ù /api/auth/profile (GET) - Unauthorized without token (4 ms)
+    ├ù /api/auth/refresh (POST) (4 ms)
+    ├ù /api/auth/logout (POST) (4 ms)
+    ├ù /api/auth/refresh (POST) - Fails after logout (4 ms)
+
+  ΓùÅ AuthController (e2e) ΓÇ║ /api/auth/register (POST)
+
+    expected 201 "Created", got 400 "Bad Request"
+
+    [0m [90m 65 |[39m             [33m.[39mpost([32m'/api/auth/register'[39m)
+     [90m 66 |[39m             [33m.[39msend(testUser)
+    [31m[1m>[22m[39m[90m 67 |[39m             
+[33m.[39mexpect([35m201[39m)[33m;[39m
+     [90m    |[39m              [31m[1m^[22m[39m
+     [90m 68 |[39m
+     [90m 69 |[39m         
+expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32m'id'[39m)[33m;[39m
+     [90m 70 |[39m         
+expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32m'email'[39m[33m,[39m 
+testUser[33m.[39memail)[33m;[39m[0m
+
+      at Object.<anonymous> (auth.e2e-spec.ts:67:14)
+      ----
+      at Test._assertStatus (../node_modules/supertest/lib/test.js:309:14)
+      at ../node_modules/supertest/lib/test.js:365:13
+      at Test._assertFunction (../node_modules/supertest/lib/test.js:342:13)
+      at Test.assert (../node_modules/supertest/lib/test.js:195:23)
+      at localAssert (../node_modules/supertest/lib/test.js:138:14)
+      at Server.<anonymous> (../node_modules/supertest/lib/test.js:152:11)
+
+  ΓùÅ AuthController (e2e) ΓÇ║ /api/auth/login (POST)
+
+    expected 201 "Created", got 401 "Unauthorized"
+
+    [0m [90m 82 |[39m                 password[33m:[39m 
+testUser[33m.[39mpassword[33m,[39m
+     [90m 83 |[39m             })
+    [31m[1m>[22m[39m[90m 84 |[39m             
+[33m.[39mexpect([35m201[39m)[33m;[39m [90m// Standard NestJS POST return 
+code[39m
+     [90m    |[39m              [31m[1m^[22m[39m
+     [90m 85 |[39m
+     [90m 86 |[39m         expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32
+m'access_token'[39m)[33m;[39m
+     [90m 87 |[39m         expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32
+m'refresh_token'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (auth.e2e-spec.ts:84:14)
+      ----
+      at Test._assertStatus (../node_modules/supertest/lib/test.js:309:14)
+      at ../node_modules/supertest/lib/test.js:365:13
+      at Test._assertFunction (../node_modules/supertest/lib/test.js:342:13)
+      at Test.assert (../node_modules/supertest/lib/test.js:195:23)
+      at localAssert (../node_modules/supertest/lib/test.js:138:14)
+      at Server.<anonymous> (../node_modules/supertest/lib/test.js:152:11)
+
+  ΓùÅ AuthController (e2e) ΓÇ║ /api/auth/profile (GET) - Success
+
+    expected 200 "OK", got 404 "Not Found"
+
+    [0m [90m  96 |[39m             
+[33m.[39m[36mget[39m([32m'/api/auth/profile'[39m)
+     [90m  97 |[39m             
+[33m.[39m[36mset[39m([32m'Authorization'[39m[33m,[39m [32m`Bearer 
+${accessToken}`[39m)
+    [31m[1m>[22m[39m[90m  98 |[39m             
+[33m.[39mexpect([35m200[39m)[33m;[39m
+     [90m     |[39m              [31m[1m^[22m[39m
+     [90m  99 |[39m
+     [90m 100 |[39m         
+expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32m'email'[39m[33m,[39m 
+testUser[33m.[39memail)[33m;[39m
+     [90m 101 |[39m         
+expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([32m'name'[39m[33m,[39m 
+testUser[33m.[39mname)[33m;[39m[0m
+
+      at Object.<anonymous> (auth.e2e-spec.ts:98:14)
+      ----
+      at Test._assertStatus (../node_modules/supertest/lib/test.js:309:14)
+      at ../node_modules/supertest/lib/test.js:365:13
+      at Test._assertFunction (../node_modules/supertest/lib/test.js:342:13)
+      at Test.assert (../node_modules/supertest/lib/test.js:195:23)
+      at localAssert (../node_modules/supertest/lib/test.js:138:14)
+      at Server.<anonymous> (../node_modules/supertest/lib/test.js:152:11)
+
+  ΓùÅ AuthController (e2e) ΓÇ║ /api/auth/profile (GET) - Unauthorized without token
+
+    expected 401 "Unauthorized", got 404 "Not Found"
+
+    [0m [90m 105 |[39m         [36mawait[39m 
+request(app[33m.[39mgetHttpServer())
+     [90m 106 |[39m             
+[33m.[39m[36mget[39m([32m'/api/auth/profile'[39m)
+    [31m[1m>[22m[39m[90m 107 |[39m             
+[33m.[39mexpect([35m401[39m)[33m;[39m
+     [90m     |[39m              [31m[1m^[22m[39m
+     [90m 108 |[39m     })[33m;[39m
+     [90m 109 |[39m
+     [90m 110 |[39m     it([32m'/api/auth/refresh (POST)'[39m[33m,[39m 
+[36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (auth.e2e-spec.ts:107:14)
+      ----
+      at Test._assertStatus (../node_modules/supertest/lib/test.js:309:14)
+      at ../node_modules/supertest/lib/test.js:365:13
+      at Test._assertFunction (../node_modules/supertest/lib/test.js:342:13)
+      at Test.assert (../node_modules/supertest/lib/test.js:195:23)
+      at localAssert (../node_modules/supertest/lib/test.js:138:14)
+      at Server.<anonymous> (../node_modules/supertest/lib/test.js:152:11)
+
+  ΓùÅ AuthController (e2e) ΓÇ║ /api/auth/refresh (POST)
+
+    expected 201 "Created", got 400 "Bad Request"
+
+    [0m [90m 115 |[39m                 refreshToken[33m:[39m 
+refreshToken[33m,[39m
+     [90m 116 |[39m             })
+    [31m[1m>[22m[39m[90m 117 |[39m             
+[33m.[39mexpect([35m201[39m)[33m;[39m
+     [90m     |[39m              [31m[1m^[22m[39m
+     [90m 118 |[39m
+     [90m 119 |[39m         expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([3
+2m'access_token'[39m)[33m;[39m
+     [90m 120 |[39m         expect(res[33m.[39mbody)[33m.[39mtoHaveProperty([3
+2m'refresh_token'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (auth.e2e-spec.ts:117:14)
+      ----
+      at Test._assertStatus (../node_modules/supertest/lib/test.js:309:14)
+      at ../node_modules/supertest/lib/test.js:365:13
+      at Test._assertFunction (../node_modules/supertest/lib/test.js:342:13)
+      at Test.assert (../node_modules/supertest/lib/test.js:195:23)
+      at localAssert (../node_modules/supertest/lib/test.js:138:14)
+      at Server.<anonymous> (../node_modules/supertest/lib/test.js:152:11)
+
+  ΓùÅ AuthController (e2e) ΓÇ║ /api/auth/logout (POST)
+
+    expected 201 "Created", got 401 "Unauthorized"
+
+    [0m [90m 129 |[39m             [33m.[39mpost([32m'/api/auth/logout'[39m)
+     [90m 130 |[39m             
+[33m.[39m[36mset[39m([32m'Authorization'[39m[33m,[39m [32m`Bearer 
+${accessToken}`[39m)
+    [31m[1m>[22m[39m[90m 131 |[39m             
+[33m.[39mexpect([35m201[39m)[33m;[39m [90m// 201 Created because it is a 
+POST[39m
+     [90m     |[39m              [31m[1m^[22m[39m
+     [90m 132 |[39m     })[33m;[39m
+     [90m 133 |[39m
+     [90m 134 |[39m     it([32m'/api/auth/refresh (POST) - Fails after 
+logout'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (auth.e2e-spec.ts:131:14)
+      ----
+      at Test._assertStatus (../node_modules/supertest/lib/test.js:309:14)
+      at ../node_modules/supertest/lib/test.js:365:13
+      at Test._assertFunction (../node_modules/supertest/lib/test.js:342:13)
+      at Test.assert (../node_modules/supertest/lib/test.js:195:23)
+      at localAssert (../node_modules/supertest/lib/test.js:138:14)
+      at Server.<anonymous> (../node_modules/supertest/lib/test.js:152:11)
+
+  ΓùÅ AuthController (e2e) ΓÇ║ /api/auth/refresh (POST) - Fails after logout
+
+    expected 401 "Unauthorized", got 400 "Bad Request"
+
+    [0m [90m 140 |[39m                 refreshToken[33m:[39m 
+refreshToken[33m,[39m
+     [90m 141 |[39m             })
+    [31m[1m>[22m[39m[90m 142 |[39m             
+[33m.[39mexpect([35m401[39m)[33m;[39m [90m// Unauthorized because refresh 
+token hash is wiped[39m
+     [90m     |[39m              [31m[1m^[22m[39m
+     [90m 143 |[39m     })[33m;[39m
+     [90m 144 |[39m })[33m;[39m
+     [90m 145 |[39m[0m
+
+      at Object.<anonymous> (auth.e2e-spec.ts:142:14)
+      ----
+      at Test._assertStatus (../node_modules/supertest/lib/test.js:309:14)
+      at ../node_modules/supertest/lib/test.js:365:13
+      at Test._assertFunction (../node_modules/supertest/lib/test.js:342:13)
+      at Test.assert (../node_modules/supertest/lib/test.js:195:23)
+      at localAssert (../node_modules/supertest/lib/test.js:138:14)
+      at Server.<anonymous> (../node_modules/supertest/lib/test.js:152:11)
+
+Test Suites: 1 failed, 1 total
+Tests:       7 failed, 7 total
+Snapshots:   0 total
+Time:        2.393 s, estimated 3 s
+Ran all test suites matching test/auth.e2e-spec.ts.

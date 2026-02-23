@@ -1,0 +1,355 @@
+﻿node.exe : FAIL src/auth/auth.controller.spec.ts
+At C:\Users\Hassa\AppData\Roaming\npm\npx.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npx-cli.js" 
+$args
++     
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (FAIL src/auth/auth 
+   .controller.spec.ts:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  ΓùÅ Test suite failed to run
+
+    Jest encountered an unexpected token
+
+    Jest failed to parse a file. This happens e.g. when your 
+code or its dependencies use non-standard JavaScript syntax, or 
+when Jest is not configured to support such syntax.
+
+    Out of the box Jest supports Babel, which will be used to 
+transform your files into valid JS based on your Babel 
+configuration.
+
+    By default "node_modules" folder is ignored by transformers.
+
+    Here's what you can do:
+     ΓÇó If you are trying to use ECMAScript Modules, see 
+https://jestjs.io/docs/ecmascript-modules for how to enable it.
+     ΓÇó If you are trying to use TypeScript, see 
+https://jestjs.io/docs/getting-started#using-typescript
+     ΓÇó To have some of your "node_modules" files transformed, 
+you can specify a custom "transformIgnorePatterns" in your 
+config.
+     ΓÇó If you need a custom transformation, specify a 
+"transform" option in your config.
+     ΓÇó If you simply want to mock your non-JS modules (e.g. 
+binary assets) you can stub them out with the 
+"moduleNameMapper" config option.
+
+    You'll find more details and examples of these config 
+options in the docs:
+    https://jestjs.io/docs/configuration
+    For information about custom transformations, see:
+    https://jestjs.io/docs/code-transformation
+
+    Details:
+
+    C:\Users\Hassa\Documents\Magnus_Copo_documents\Magnus_Copo_W
+orkspace_Files\Split_flow_final_prod\backend\node_modules\jose\d
+ist\webapi\index.js:1
+    export { compactDecrypt } from './jwe/compact/decrypt.js';
+    ^^^^^^
+
+    SyntaxError: Unexpected token 'export'
+
+    [0m [90m 10 |[39m [36mimport[39m [33m*[39m 
+[36mas[39m bcrypt [36mfrom[39m [32m'bcrypt'[39m[33m;[39m
+     [90m 11 |[39m [36mimport[39m { [33mOAuth2Client[39m 
+} [36mfrom[39m [32m'google-auth-library'[39m[33m;[39m
+    [31m[1m>[22m[39m[90m 12 |[39m [36mimport[39m { 
+createRemoteJWKSet[33m,[39m jwtVerify } [36mfrom[39m 
+[32m'jose'[39m[33m;[39m
+     [90m    |[39m [31m[1m^[22m[39m
+     [90m 13 |[39m
+     [90m 14 |[39m [33m@[39m[33mInjectable[39m()
+     [90m 15 |[39m [36mexport[39m [36mclass[39m 
+[33mAuthService[39m {[0m
+
+      at Runtime.createScriptFromCode 
+(../node_modules/jest-runtime/build/index.js:1318:40)
+      at Object.<anonymous> (auth/auth.service.ts:12:1)
+      at Object.<anonymous> (auth/auth.controller.ts:11:1)
+      at Object.<anonymous> (auth/auth.controller.spec.ts:3:1)
+
+FAIL src/users/users.controller.spec.ts
+  ΓùÅ Test suite failed to run
+
+    Jest encountered an unexpected token
+
+    Jest failed to parse a file. This happens e.g. when your 
+code or its dependencies use non-standard JavaScript syntax, or 
+when Jest is not configured to support such syntax.
+
+    Out of the box Jest supports Babel, which will be used to 
+transform your files into valid JS based on your Babel 
+configuration.
+
+    By default "node_modules" folder is ignored by transformers.
+
+    Here's what you can do:
+     ΓÇó If you are trying to use ECMAScript Modules, see 
+https://jestjs.io/docs/ecmascript-modules for how to enable it.
+     ΓÇó If you are trying to use TypeScript, see 
+https://jestjs.io/docs/getting-started#using-typescript
+     ΓÇó To have some of your "node_modules" files transformed, 
+you can specify a custom "transformIgnorePatterns" in your 
+config.
+     ΓÇó If you need a custom transformation, specify a 
+"transform" option in your config.
+     ΓÇó If you simply want to mock your non-JS modules (e.g. 
+binary assets) you can stub them out with the 
+"moduleNameMapper" config option.
+
+    You'll find more details and examples of these config 
+options in the docs:
+    https://jestjs.io/docs/configuration
+    For information about custom transformations, see:
+    https://jestjs.io/docs/code-transformation
+
+    Details:
+
+    C:\Users\Hassa\Documents\Magnus_Copo_documents\Magnus_Copo_W
+orkspace_Files\Split_flow_final_prod\backend\node_modules\jose\d
+ist\webapi\index.js:1
+    export { compactDecrypt } from './jwe/compact/decrypt.js';
+    ^^^^^^
+
+    SyntaxError: Unexpected token 'export'
+
+    [0m [90m 10 |[39m [36mimport[39m [33m*[39m 
+[36mas[39m bcrypt [36mfrom[39m [32m'bcrypt'[39m[33m;[39m
+     [90m 11 |[39m [36mimport[39m { [33mOAuth2Client[39m 
+} [36mfrom[39m [32m'google-auth-library'[39m[33m;[39m
+    [31m[1m>[22m[39m[90m 12 |[39m [36mimport[39m { 
+createRemoteJWKSet[33m,[39m jwtVerify } [36mfrom[39m 
+[32m'jose'[39m[33m;[39m
+     [90m    |[39m [31m[1m^[22m[39m
+     [90m 13 |[39m
+     [90m 14 |[39m [33m@[39m[33mInjectable[39m()
+     [90m 15 |[39m [36mexport[39m [36mclass[39m 
+[33mAuthService[39m {[0m
+
+      at Runtime.createScriptFromCode 
+(../node_modules/jest-runtime/build/index.js:1318:40)
+      at Object.<anonymous> (auth/auth.service.ts:12:1)
+      at Object.<anonymous> (users/users.controller.ts:17:1)
+      at Object.<anonymous> (users/users.controller.spec.ts:3:1)
+
+FAIL src/projects/projects.service.spec.ts
+  ΓùÅ ProjectsService ΓÇ║ escapeCsvCell ΓÇ║ should quote strings
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "\"standard text\""
+    Received: "standard text"
+
+    [0m [90m 36 |[39m   
+describe([32m'escapeCsvCell'[39m[33m,[39m () [33m=>[39m {
+     [90m 37 |[39m     it([32m'should quote 
+strings'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 38 |[39m       
+expect(service[33m.[39mescapeCsvCell([32m'standard 
+text'[39m))[33m.[39mtoBe([32m'"standard 
+text"'[39m)[33m;[39m
+     [90m    |[39m                                            
+          [31m[1m^[22m[39m
+     [90m 39 |[39m     })[33m;[39m
+     [90m 40 |[39m
+     [90m 41 |[39m     it([32m'should escape internal double 
+quotes'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:38:54)
+
+  ΓùÅ ProjectsService ΓÇ║ escapeCsvCell ΓÇ║ should convert 
+numbers to strings
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "\"5000\""
+    Received: "5000"
+
+    [0m [90m 44 |[39m
+     [90m 45 |[39m     it([32m'should convert numbers to 
+strings'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 46 |[39m       expect(service[33
+m.[39mescapeCsvCell([35m5000[39m))[33m.[39mtoBe([32m'"5000
+"'[39m)[33m;[39m
+     [90m    |[39m                                           
+[31m[1m^[22m[39m
+     [90m 47 |[39m     })[33m;[39m
+     [90m 48 |[39m
+     [90m 49 |[39m     it([32m'should prevent formula 
+injection by prepending apostrophe to =, +, -, 
+@'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:46:43)
+
+  ΓùÅ ProjectsService ΓÇ║ escapeCsvCell ΓÇ║ should prevent 
+formula injection by prepending apostrophe to =, +, -, @
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "\"'=\"1+1\"\""
+    Received: "=1+1"
+
+    [0m [90m 48 |[39m
+     [90m 49 |[39m     it([32m'should prevent formula 
+injection by prepending apostrophe to =, +, -, 
+@'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 50 |[39m       expect(service[33
+m.[39mescapeCsvCell([32m'=1+1'[39m))[33m.[39mtoBe([32m`"'=
+"1+1""`[39m)[33m;[39m [90m// The logic might handle this by 
+wrapping the quote[39m
+     [90m    |[39m                                            
+ [31m[1m^[22m[39m
+     [90m 51 |[39m       [90m// Actually reading the file: 
+escapeCsvCell(value) { return `"${text.replaceAll('"', 
+'""')}"`; }[39m
+     [90m 52 |[39m       [90m// Ah, wait, 
+ProjectsService.escapeCsvCell actually doesn't do the 
+apostrophe in the source code. Let's test what's there.[39m
+     [90m 53 |[39m     })[33m;[39m[0m
+
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:50:45)
+
+  ΓùÅ ProjectsService ΓÇ║ getRefId ΓÇ║ should handle object 
+with toHexString (ObjectId)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "bson-id"
+    Received: "[object Object]"
+
+    [0m [90m 68 |[39m
+     [90m 69 |[39m     it([32m'should handle object with 
+toHexString (ObjectId)'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 70 |[39m       
+expect(service[33m.[39mgetRefId({ toHexString[33m:[39m () 
+[33m=>[39m [32m'bson-id'[39m 
+}))[33m.[39mtoBe([32m'bson-id'[39m)[33m;[39m
+     [90m    |[39m                                            
+                      [31m[1m^[22m[39m
+     [90m 71 |[39m     })[33m;[39m
+     [90m 72 |[39m
+     [90m 73 |[39m     it([32m'should extract ._id or 
+.id'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:70:66)
+
+  ΓùÅ ProjectsService ΓÇ║ assertCanManageMembers ΓÇ║ should not 
+throw if user is a project-level project_admin inside investors 
+array
+
+    expect(received).not.toThrow()
+
+    Error name:    "ForbiddenException"
+    Error message: "Only project creator or admins can manage 
+members"
+
+        [0m [90m 1307 |[39m     [36mconst[39m creatorId 
+[33m=[39m [36mthis[39m[33m.[39mgetRefId(project[33m?[39m
+[33m.[39mcreatedBy)[33m;[39m
+         [90m 1308 |[39m     [36mif[39m (creatorId 
+[33m!==[39m actor[33m?[39m[33m.[39muserId) {
+        [31m[1m>[22m[39m[90m 1309 |[39m       
+[36mthrow[39m [36mnew[39m [33mForbiddenException[39m(
+         [90m      |[39m             [31m[1m^[22m[39m
+         [90m 1310 |[39m         [32m'Only project creator 
+or admins can manage members'[39m[33m,[39m
+         [90m 1311 |[39m       )[33m;[39m
+         [90m 1312 |[39m     }[0m
+
+      at ProjectsService.assertCanManageMembers 
+(projects/projects.service.ts:1309:13)
+      at projects/projects.service.spec.ts:159:17
+      at Object.<anonymous> 
+(../node_modules/expect/build/index.js:1824:9)
+      at Object.throwingMatcher [as toThrow] 
+(../node_modules/expect/build/index.js:2235:93)
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:160:13)
+      at Object.<anonymous> 
+(projects/projects.service.spec.ts:160:13)
+
+FAIL src/projects/projects.controller.spec.ts (5.082 s)
+  ΓùÅ ProjectsController ΓÇ║ should be defined
+
+    Nest can't resolve dependencies of the ProjectsController 
+(ProjectsService, ?). Please make sure that the argument 
+ProjectAnalyticsService at index [1] is available in the 
+RootTestModule context.
+
+    Potential solutions:
+    - Is RootTestModule a valid NestJS module?
+    - If ProjectAnalyticsService is a provider, is it part of 
+the current RootTestModule?
+    - If ProjectAnalyticsService is exported from a separate 
+@Module, is that module imported within RootTestModule?
+      @Module({
+        imports: [ /* the Module containing 
+ProjectAnalyticsService */ ]
+      })
+
+    For more common dependency resolution issues, see: 
+https://docs.nestjs.com/faq/common-errors
+
+    [0m [90m  7 |[39m
+     [90m  8 |[39m   beforeEach([36masync[39m () 
+[33m=>[39m {
+    [31m[1m>[22m[39m[90m  9 |[39m     [36mconst[39m 
+module[33m:[39m [33mTestingModule[39m [33m=[39m 
+[36mawait[39m [33mTest[39m[33m.[39mcreateTestingModule({
+     [90m    |[39m                                   
+[31m[1m^[22m[39m
+     [90m 10 |[39m       controllers[33m:[39m 
+[[33mProjectsController[39m][33m,[39m
+     [90m 11 |[39m       providers[33m:[39m [{ 
+provide[33m:[39m [33mProjectsService[39m[33m,[39m 
+useValue[33m:[39m {} }][33m,[39m
+     [90m 12 |[39m     })[33m.[39mcompile()[33m;[39m[0m
+
+      at TestingInjector.lookupComponentInParentModules 
+(../node_modules/@nestjs/core/injector/injector.js:290:19)
+      at TestingInjector.resolveComponentWrapper 
+(../node_modules/@nestjs/testing/testing-injector.js:19:45)
+      at resolveParam 
+(../node_modules/@nestjs/core/injector/injector.js:140:38)
+          at async Promise.all (index 1)
+      at TestingInjector.resolveConstructorParams 
+(../node_modules/@nestjs/core/injector/injector.js:169:27)
+      at TestingInjector.loadInstance 
+(../node_modules/@nestjs/core/injector/injector.js:75:13)
+      at TestingInjector.loadController 
+(../node_modules/@nestjs/core/injector/injector.js:94:9)
+      at 
+../node_modules/@nestjs/core/injector/instance-loader.js:68:13
+          at async Promise.all (index 0)
+      at TestingInstanceLoader.createInstancesOfControllers 
+(../node_modules/@nestjs/core/injector/instance-loader.js:67:9)
+      at 
+../node_modules/@nestjs/core/injector/instance-loader.js:42:13
+          at async Promise.all (index 1)
+      at TestingInstanceLoader.createInstances 
+(../node_modules/@nestjs/core/injector/instance-loader.js:39:9)
+      at TestingInstanceLoader.createInstancesOfDependencies 
+(../node_modules/@nestjs/core/injector/instance-loader.js:22:13)
+      at TestingInstanceLoader.createInstancesOfDependencies 
+(../node_modules/@nestjs/testing/testing-instance-loader.js:9:9)
+      at TestingModuleBuilder.createInstancesOfDependencies (../
+node_modules/@nestjs/testing/testing-module.builder.js:118:9)
+      at TestingModuleBuilder.compile 
+(../node_modules/@nestjs/testing/testing-module.builder.js:74:9)
+      at Object.<anonymous> 
+(projects/projects.controller.spec.ts:9:35)
+
+Test Suites: 4 failed, 4 total
+Tests:       6 failed, 15 passed, 21 total
+Snapshots:   0 total
+Time:        6.947 s
+Ran all test suites matching src/users/users.controller.spec.ts|
+src/auth/auth.controller.spec.ts|src/projects/projects.controlle
+r.spec.ts|src/projects/projects.service.spec.ts.
