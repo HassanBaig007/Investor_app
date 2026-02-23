@@ -11,11 +11,12 @@ import {
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
+    Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { theme, formatCurrency } from '../../components/Theme';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
+import { theme } from '../../components/Theme';
 import { api } from '../../services/api';
 
 export default function ProfileScreen({ navigation, onLogout }) {
@@ -23,6 +24,13 @@ export default function ProfileScreen({ navigation, onLogout }) {
     const [isEditing, setIsEditing] = useState(false);
     const [loading, setLoading] = useState(true);
     const [editedProfile, setEditedProfile] = useState({});
+    const [showPasswordModal, setShowPasswordModal] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [changingPassword, setChangingPassword] = useState(false);
+    const [activeProjectsCount, setActiveProjectsCount] = useState(0);
+    const [totalProjectsCount, setTotalProjectsCount] = useState(0);
 
     useEffect(() => {
         loadProfile();
@@ -30,10 +38,24 @@ export default function ProfileScreen({ navigation, onLogout }) {
 
     const loadProfile = async () => {
         try {
-            const data = await api.getProfile(); // This now returns global currentUser
+            const [data, projectsData] = await Promise.all([
+                api.getProfile(),
+                api.getProjects().catch(() => []),
+            ]);
             setProfile(data);
             setEditedProfile(data);
+
+            // Compute real project stats for the current user
+            const userId = data?._id || data?.id;
+            const myProjects = (projectsData || []).filter(p => {
+                return p.createdBy === userId ||
+                    p.createdBy?._id === userId ||
+                    p.investors?.some(inv => (inv.user?._id || inv.user) === userId);
+            });
+            setTotalProjectsCount(myProjects.length);
+            setActiveProjectsCount(myProjects.filter(p => p.status === 'active').length);
         } catch (error) {
+            console.error('Failed to load profile:', error);
             Alert.alert('Error', 'Failed to load profile');
         } finally {
             setLoading(false);
@@ -48,6 +70,7 @@ export default function ProfileScreen({ navigation, onLogout }) {
             setIsEditing(false);
             Alert.alert('Success', 'Profile updated successfully');
         } catch (error) {
+            console.error('Failed to update profile:', error);
             Alert.alert('Error', 'Failed to update profile');
         } finally {
             setLoading(false);
@@ -69,6 +92,42 @@ export default function ProfileScreen({ navigation, onLogout }) {
                 },
             ]
         );
+    };
+
+    const resetPasswordForm = () => {
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+    };
+
+    const handleChangePassword = async () => {
+        if (!currentPassword || !newPassword || !confirmPassword) {
+            Alert.alert('Validation Error', 'Please fill all password fields');
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            Alert.alert('Validation Error', 'New password must be at least 6 characters');
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            Alert.alert('Validation Error', 'New password and confirm password do not match');
+            return;
+        }
+
+        try {
+            setChangingPassword(true);
+            await api.changePassword(currentPassword, newPassword);
+            Alert.alert('Success', 'Password changed successfully');
+            setShowPasswordModal(false);
+            resetPasswordForm();
+        } catch (error) {
+            console.error('Change password failed:', error);
+            Alert.alert('Error', error.friendlyMessage || 'Failed to change password');
+        } finally {
+            setChangingPassword(false);
+        }
     };
 
     if (loading) {
@@ -175,18 +234,18 @@ export default function ProfileScreen({ navigation, onLogout }) {
                                 <View style={[styles.statIconContainer, { backgroundColor: theme.colors.primary + '15' }]}>
                                     <Ionicons name="briefcase" size={20} color={theme.colors.primary} />
                                 </View>
-                                <Text style={styles.statValue}>2</Text>
-                                <Text style={styles.statLabel}>Active Investments</Text>
+                                <Text style={styles.statValue}>{activeProjectsCount}</Text>
+                                <Text style={styles.statLabel}>Active Projects</Text>
                             </LinearGradient>
                             <LinearGradient
                                 colors={['#FFFFFF', '#F8FAFC']}
                                 style={styles.statCard}
                             >
                                 <View style={[styles.statIconContainer, { backgroundColor: theme.colors.success + '15' }]}>
-                                    <Ionicons name="trending-up" size={20} color={theme.colors.success} />
+                                    <Ionicons name="layers" size={20} color={theme.colors.success} />
                                 </View>
-                                <Text style={styles.statValue}>+15%</Text>
-                                <Text style={styles.statLabel}>Total Returns</Text>
+                                <Text style={styles.statValue}>{totalProjectsCount}</Text>
+                                <Text style={styles.statLabel}>Total Projects</Text>
                             </LinearGradient>
                         </View>
                     </View>
@@ -206,7 +265,7 @@ export default function ProfileScreen({ navigation, onLogout }) {
 
                         <TouchableOpacity
                             style={styles.menuItem}
-                            onPress={() => Alert.alert('Coming Soon', 'Password change will be available soon')}
+                            onPress={() => setShowPasswordModal(true)}
                         >
                             <Ionicons name="key-outline" size={22} color={theme.colors.textSecondary} />
                             <Text style={styles.menuText}>Change Password</Text>
@@ -238,6 +297,69 @@ export default function ProfileScreen({ navigation, onLogout }) {
                     <View style={{ height: 40 }} />
                 </ScrollView>
             </KeyboardAvoidingView>
+
+            <Modal
+                visible={showPasswordModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => {
+                    setShowPasswordModal(false);
+                    resetPasswordForm();
+                }}
+            >
+                <View style={styles.passwordModalOverlay}>
+                    <View style={styles.passwordModalCard}>
+                        <Text style={styles.passwordModalTitle}>Change Password</Text>
+
+                        <TextInput
+                            style={styles.passwordInput}
+                            value={currentPassword}
+                            onChangeText={setCurrentPassword}
+                            placeholder="Current password"
+                            placeholderTextColor={theme.colors.textTertiary}
+                            secureTextEntry
+                        />
+                        <TextInput
+                            style={styles.passwordInput}
+                            value={newPassword}
+                            onChangeText={setNewPassword}
+                            placeholder="New password"
+                            placeholderTextColor={theme.colors.textTertiary}
+                            secureTextEntry
+                        />
+                        <TextInput
+                            style={styles.passwordInput}
+                            value={confirmPassword}
+                            onChangeText={setConfirmPassword}
+                            placeholder="Confirm new password"
+                            placeholderTextColor={theme.colors.textTertiary}
+                            secureTextEntry
+                        />
+
+                        <View style={styles.passwordModalActions}>
+                            <TouchableOpacity
+                                style={styles.passwordCancelBtn}
+                                onPress={() => {
+                                    setShowPasswordModal(false);
+                                    resetPasswordForm();
+                                }}
+                                disabled={changingPassword}
+                            >
+                                <Text style={styles.passwordCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.passwordSaveBtn, changingPassword && styles.passwordSaveBtnDisabled]}
+                                onPress={handleChangePassword}
+                                disabled={changingPassword}
+                            >
+                                <Text style={styles.passwordSaveText}>
+                                    {changingPassword ? 'Saving...' : 'Save'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -411,5 +533,59 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: 'white',
+    },
+    passwordModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        paddingHorizontal: 20,
+    },
+    passwordModalCard: {
+        backgroundColor: theme.colors.surface,
+        borderRadius: 16,
+        padding: 16,
+    },
+    passwordModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: theme.colors.textPrimary,
+        marginBottom: 12,
+    },
+    passwordInput: {
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 10,
+        color: theme.colors.textPrimary,
+        backgroundColor: theme.colors.background,
+    },
+    passwordModalActions: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        marginTop: 6,
+    },
+    passwordCancelBtn: {
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginRight: 8,
+    },
+    passwordCancelText: {
+        color: theme.colors.textSecondary,
+        fontWeight: '600',
+    },
+    passwordSaveBtn: {
+        backgroundColor: theme.colors.primary,
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+    },
+    passwordSaveBtnDisabled: {
+        opacity: 0.6,
+    },
+    passwordSaveText: {
+        color: 'white',
+        fontWeight: '700',
     },
 });

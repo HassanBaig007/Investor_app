@@ -14,11 +14,143 @@ import {
     Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme } from '../../components/Theme';
 import { api } from '../../services/api';
-import { getRelativeTime } from '../../data/mockData';
+import { getRelativeTime } from '../../utils/dateTimeUtils';
+
+const getPriorityColor = (priority) => {
+    switch (priority) {
+        case 'high': return theme.colors.danger;
+        case 'medium': return theme.colors.warning;
+        case 'low': return theme.colors.success;
+        default: return theme.colors.textSecondary;
+    }
+};
+
+const getPriorityIcon = (priority) => {
+    switch (priority) {
+        case 'high': return 'alert-circle';
+        case 'medium': return 'information-circle';
+        case 'low': return 'checkmark-circle';
+        default: return 'ellipse';
+    }
+};
+
+const getAudienceLabel = (targetAudience) => {
+    if (targetAudience === 'all') return 'All Users';
+    if (targetAudience === 'investors') return 'Investors Only';
+    return 'Admins Only';
+};
+
+const AnnouncementCard = ({ item, fadeAnim, onDelete }) => (
+    <Animated.View style={[styles.card, { opacity: fadeAnim }]}>
+        <View style={styles.cardHeader}>
+            <View style={[styles.priorityBadge, { backgroundColor: `${getPriorityColor(item.priority)}20` }]}>
+                <Ionicons
+                    name={getPriorityIcon(item.priority)}
+                    size={14}
+                    color={getPriorityColor(item.priority)}
+                />
+                <Text style={[styles.priorityText, { color: getPriorityColor(item.priority) }]}>
+                    {item.priority.toUpperCase()}
+                </Text>
+            </View>
+            <TouchableOpacity onPress={() => onDelete(item.id)}>
+                <Ionicons name="trash-outline" size={20} color={theme.colors.textTertiary} />
+            </TouchableOpacity>
+        </View>
+
+        <Text style={styles.cardTitle}>{item.title}</Text>
+        <Text style={styles.cardContent}>{item.content}</Text>
+
+        <View style={styles.cardFooter}>
+            <View style={styles.audienceBadge}>
+                <Ionicons
+                    name={item.targetAudience === 'all' ? 'people' : 'person'}
+                    size={14}
+                    color={theme.colors.textSecondary}
+                />
+                <Text style={styles.audienceText}>
+                    {getAudienceLabel(item.targetAudience)}
+                </Text>
+            </View>
+            <Text style={styles.timeText}>{getRelativeTime(item.createdAt)}</Text>
+        </View>
+    </Animated.View>
+);
+
+AnnouncementCard.propTypes = {
+    item: PropTypes.shape({
+        id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+        title: PropTypes.string.isRequired,
+        content: PropTypes.string.isRequired,
+        priority: PropTypes.string.isRequired,
+        targetAudience: PropTypes.string.isRequired,
+        createdAt: PropTypes.string.isRequired,
+    }).isRequired,
+    fadeAnim: PropTypes.object.isRequired,
+    onDelete: PropTypes.func.isRequired,
+};
+
+const PriorityButton = ({ value, label, selected, onPress }) => (
+    <TouchableOpacity
+        style={[
+            styles.optionButton,
+            selected && {
+                backgroundColor: `${getPriorityColor(value)}20`,
+                borderColor: getPriorityColor(value),
+            },
+        ]}
+        onPress={() => onPress(value)}
+    >
+        <View style={[styles.optionDot, { backgroundColor: getPriorityColor(value) }]} />
+        <Text style={[
+            styles.optionText,
+            selected && { color: getPriorityColor(value) },
+        ]}>
+            {label}
+        </Text>
+    </TouchableOpacity>
+);
+
+PriorityButton.propTypes = {
+    value: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    selected: PropTypes.bool.isRequired,
+    onPress: PropTypes.func.isRequired,
+};
+
+const AudienceButton = ({ value, label, icon, selected, onPress }) => (
+    <TouchableOpacity
+        style={[
+            styles.optionButton,
+            selected && styles.optionButtonActive,
+        ]}
+        onPress={() => onPress(value)}
+    >
+        <Ionicons
+            name={icon}
+            size={16}
+            color={selected ? theme.colors.primary : theme.colors.textSecondary}
+        />
+        <Text style={[
+            styles.optionText,
+            selected && styles.optionTextActive,
+        ]}>
+            {label}
+        </Text>
+    </TouchableOpacity>
+);
+
+AudienceButton.propTypes = {
+    value: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    icon: PropTypes.string.isRequired,
+    selected: PropTypes.bool.isRequired,
+    onPress: PropTypes.func.isRequired,
+};
 
 export default function AnnouncementsScreen({ navigation }) {
     const [announcements, setAnnouncements] = useState([]);
@@ -53,6 +185,7 @@ export default function AnnouncementsScreen({ navigation }) {
             const data = await api.getAnnouncements();
             setAnnouncements(data);
         } catch (error) {
+            console.error('Failed to load announcements:', error);
             Alert.alert('Error', 'Failed to load announcements');
         } finally {
             setLoading(false);
@@ -81,6 +214,7 @@ export default function AnnouncementsScreen({ navigation }) {
                 Alert.alert('Success', 'Announcement published successfully');
             }
         } catch (error) {
+            console.error('Failed to create announcement:', error);
             Alert.alert('Error', 'Failed to create announcement');
         } finally {
             setSubmitting(false);
@@ -97,30 +231,17 @@ export default function AnnouncementsScreen({ navigation }) {
                     text: 'Delete',
                     style: 'destructive',
                     onPress: async () => {
-                        await api.deleteAnnouncement(id);
-                        setAnnouncements(announcements.filter(a => a.id !== id));
+                        try {
+                            await api.deleteAnnouncement(id);
+                            setAnnouncements(announcements.filter((announcement) => announcement.id !== id));
+                        } catch (error) {
+                            console.error('Failed to delete announcement:', error);
+                            Alert.alert('Error', 'Failed to delete announcement');
+                        }
                     },
                 },
             ]
         );
-    };
-
-    const getPriorityColor = (priority) => {
-        switch (priority) {
-            case 'high': return theme.colors.danger;
-            case 'medium': return theme.colors.warning;
-            case 'low': return theme.colors.success;
-            default: return theme.colors.textSecondary;
-        }
-    };
-
-    const getPriorityIcon = (priority) => {
-        switch (priority) {
-            case 'high': return 'alert-circle';
-            case 'medium': return 'information-circle';
-            case 'low': return 'checkmark-circle';
-            default: return 'ellipse';
-        }
     };
 
     if (loading) {
@@ -131,107 +252,13 @@ export default function AnnouncementsScreen({ navigation }) {
         );
     }
 
-    const AnnouncementCard = ({ item }) => (
-        <Animated.View style={[styles.card, { opacity: fadeAnim }]}>
-            <View style={styles.cardHeader}>
-                <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(item.priority) + '20' }]}>
-                    <Ionicons
-                        name={getPriorityIcon(item.priority)}
-                        size={14}
-                        color={getPriorityColor(item.priority)}
-                    />
-                    <Text style={[styles.priorityText, { color: getPriorityColor(item.priority) }]}>
-                        {item.priority.toUpperCase()}
-                    </Text>
-                </View>
-                <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                    <Ionicons name="trash-outline" size={20} color={theme.colors.textTertiary} />
-                </TouchableOpacity>
-            </View>
 
-            <Text style={styles.cardTitle}>{item.title}</Text>
-            <Text style={styles.cardContent}>{item.content}</Text>
-
-            <View style={styles.cardFooter}>
-                <View style={styles.audienceBadge}>
-                    <Ionicons
-                        name={item.targetAudience === 'all' ? 'people' : 'person'}
-                        size={14}
-                        color={theme.colors.textSecondary}
-                    />
-                    <Text style={styles.audienceText}>
-                        {item.targetAudience === 'all' ? 'All Users' :
-                            item.targetAudience === 'investors' ? 'Investors Only' : 'Admins Only'}
-                    </Text>
-                </View>
-                <Text style={styles.timeText}>{getRelativeTime(item.createdAt)}</Text>
-            </View>
-        </Animated.View>
-    );
-
-    AnnouncementCard.propTypes = {
-        item: PropTypes.shape({
-            id: PropTypes.string.isRequired,
-            title: PropTypes.string.isRequired,
-            content: PropTypes.string.isRequired,
-            priority: PropTypes.string.isRequired,
-            targetAudience: PropTypes.string.isRequired,
-            createdAt: PropTypes.string.isRequired,
-        }).isRequired,
+    const handlePriorityChange = (priority) => {
+        setNewAnnouncement({ ...newAnnouncement, priority });
     };
 
-    const PriorityButton = ({ value, label }) => (
-        <TouchableOpacity
-            style={[
-                styles.optionButton,
-                newAnnouncement.priority === value && {
-                    backgroundColor: getPriorityColor(value) + '20',
-                    borderColor: getPriorityColor(value),
-                },
-            ]}
-            onPress={() => setNewAnnouncement({ ...newAnnouncement, priority: value })}
-        >
-            <View style={[styles.optionDot, { backgroundColor: getPriorityColor(value) }]} />
-            <Text style={[
-                styles.optionText,
-                newAnnouncement.priority === value && { color: getPriorityColor(value) },
-            ]}>
-                {label}
-            </Text>
-        </TouchableOpacity>
-    );
-
-    PriorityButton.propTypes = {
-        value: PropTypes.string.isRequired,
-        label: PropTypes.string.isRequired,
-    };
-
-    const AudienceButton = ({ value, label, icon }) => (
-        <TouchableOpacity
-            style={[
-                styles.optionButton,
-                newAnnouncement.targetAudience === value && styles.optionButtonActive,
-            ]}
-            onPress={() => setNewAnnouncement({ ...newAnnouncement, targetAudience: value })}
-        >
-            <Ionicons
-                name={icon}
-                size={16}
-                color={newAnnouncement.targetAudience === value ? theme.colors.primary : theme.colors.textSecondary}
-            />
-            <Text style={[
-                styles.optionText,
-                newAnnouncement.targetAudience === value && styles.optionTextActive,
-            ]}>
-                {label}
-            </Text>
-        </TouchableOpacity>
-    );
-
-    AudienceButton.propTypes = {
-        value: PropTypes.string.isRequired,
-        label: PropTypes.string.isRequired,
-        icon: PropTypes.string.isRequired,
+    const handleAudienceChange = (targetAudience) => {
+        setNewAnnouncement({ ...newAnnouncement, targetAudience });
     };
 
     return (
@@ -256,7 +283,7 @@ export default function AnnouncementsScreen({ navigation }) {
                     </View>
                 ) : (
                     announcements.map((item) => (
-                        <AnnouncementCard key={item.id} item={item} />
+                        <AnnouncementCard key={item.id} item={item} fadeAnim={fadeAnim} onDelete={handleDelete} />
                     ))
                 )}
                 <View style={{ height: 40 }} />
@@ -308,18 +335,18 @@ export default function AnnouncementsScreen({ navigation }) {
                                     <View style={styles.inputGroup}>
                                         <Text style={styles.inputLabel}>Priority</Text>
                                         <View style={styles.optionsRow}>
-                                            <PriorityButton value="low" label="Low" />
-                                            <PriorityButton value="medium" label="Medium" />
-                                            <PriorityButton value="high" label="High" />
+                                            <PriorityButton value="low" label="Low" selected={newAnnouncement.priority === 'low'} onPress={handlePriorityChange} />
+                                            <PriorityButton value="medium" label="Medium" selected={newAnnouncement.priority === 'medium'} onPress={handlePriorityChange} />
+                                            <PriorityButton value="high" label="High" selected={newAnnouncement.priority === 'high'} onPress={handlePriorityChange} />
                                         </View>
                                     </View>
 
                                     <View style={styles.inputGroup}>
                                         <Text style={styles.inputLabel}>Target Audience</Text>
                                         <View style={styles.optionsRow}>
-                                            <AudienceButton value="all" label="All" icon="people" />
-                                            <AudienceButton value="investors" label="Investors" icon="person" />
-                                            <AudienceButton value="admins" label="Admins" icon="shield" />
+                                            <AudienceButton value="all" label="All" icon="people" selected={newAnnouncement.targetAudience === 'all'} onPress={handleAudienceChange} />
+                                            <AudienceButton value="investors" label="Investors" icon="person" selected={newAnnouncement.targetAudience === 'investors'} onPress={handleAudienceChange} />
+                                            <AudienceButton value="admins" label="Admins" icon="shield" selected={newAnnouncement.targetAudience === 'admins'} onPress={handleAudienceChange} />
                                         </View>
                                     </View>
                                 </ScrollView>

@@ -26,14 +26,18 @@ const KNOWN_EMAIL_PROVIDERS = [
     'msn.com', 'ymail.com', 'googlemail.com', 'gmx.com', 'rediffmail.com'
 ];
 
-// Password requirements - STRICT
-const PASSWORD_MIN_LENGTH = 10;
-const PASSWORD_MAX_LENGTH = 128;
+// Password requirements - configurable from backend via updateFromBackendConfig()
+let PASSWORD_MIN_LENGTH = 10;
+let PASSWORD_MAX_LENGTH = 128;
 const PASSWORD_UPPERCASE_REGEX = /[A-Z]/;
 const PASSWORD_LOWERCASE_REGEX = /[a-z]/;
-const PASSWORD_NUMBER_REGEX = /[0-9]/;
+const PASSWORD_NUMBER_REGEX = /\d/;
 const PASSWORD_SPECIAL_REGEX = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/;
 const PASSWORD_NO_SPACES_REGEX = /^\S+$/;
+let PASSWORD_REQUIRE_UPPERCASE = true;
+let PASSWORD_REQUIRE_LOWERCASE = true;
+let PASSWORD_REQUIRE_NUMBER = true;
+let PASSWORD_REQUIRE_SPECIAL = true;
 
 // Common weak passwords to reject
 const COMMON_WEAK_PASSWORDS = [
@@ -41,6 +45,45 @@ const COMMON_WEAK_PASSWORDS = [
     'qwerty123', 'qwertyuiop', 'letmein', 'welcome', 'admin123', 'abc123',
     'iloveyou', 'monkey', 'dragon', 'master', 'login', 'passw0rd', 'hello123'
 ];
+
+/**
+ * Update validation rules from backend appConfig.
+ * Call once after login with the result of api.getAppConfig().
+ * @param {object} config - Backend app config (passwordPolicy, disposableEmailDomains)
+ */
+export const updateFromBackendConfig = (config) => { // NOSONAR
+    if (!config) return;
+    if (config.passwordPolicy) {
+        const p = config.passwordPolicy;
+        if (typeof p.minLength === 'number') PASSWORD_MIN_LENGTH = p.minLength;
+        if (typeof p.maxLength === 'number') PASSWORD_MAX_LENGTH = p.maxLength;
+        if (typeof p.requireUppercase === 'boolean') PASSWORD_REQUIRE_UPPERCASE = p.requireUppercase;
+        if (typeof p.requireLowercase === 'boolean') PASSWORD_REQUIRE_LOWERCASE = p.requireLowercase;
+        if (typeof p.requireNumber === 'boolean') PASSWORD_REQUIRE_NUMBER = p.requireNumber;
+        if (typeof p.requireSpecial === 'boolean') PASSWORD_REQUIRE_SPECIAL = p.requireSpecial;
+    }
+    if (Array.isArray(config.disposableEmailDomains) && config.disposableEmailDomains.length > 0) {
+        // Merge backend disposable domains with local list
+        config.disposableEmailDomains.forEach(domain => {
+            if (!DISALLOWED_EMAIL_DOMAINS.includes(domain)) {
+                DISALLOWED_EMAIL_DOMAINS.push(domain);
+            }
+        });
+    }
+};
+
+/**
+ * Reset validation rules to defaults (primarily for testing).
+ */
+export const resetToDefaultConfig = () => {
+    PASSWORD_MIN_LENGTH = 10;
+    PASSWORD_MAX_LENGTH = 128;
+    PASSWORD_REQUIRE_UPPERCASE = true;
+    PASSWORD_REQUIRE_LOWERCASE = true;
+    PASSWORD_REQUIRE_NUMBER = true;
+    PASSWORD_REQUIRE_SPECIAL = true;
+    // Note: DISALLOWED_EMAIL_DOMAINS is a const array, but we could clear injected ones if needed
+};
 
 // Name validation - STRICT
 const NAME_MIN_LENGTH = 2;
@@ -52,7 +95,7 @@ const NAME_REGEX = /^[a-zA-Z]+(?:\s[a-zA-Z]+)*$/;
  * @param {string} email 
  * @returns {{ isValid: boolean, message: string }}
  */
-export const validateEmail = (email) => {
+export const validateEmail = (email) => { // NOSONAR
     if (!email || !email.trim()) {
         return { isValid: false, message: 'Email address is required' };
     }
@@ -121,7 +164,7 @@ export const validateEmail = (email) => {
         }
 
         // Domain part CANNOT contain ANY numbers - only letters and hyphens allowed
-        if (/[0-9]/.test(part)) {
+        if (/\d/.test(part)) {
             return { isValid: false, message: 'Email domain cannot contain numbers (e.g., use gmail.com not gmail1.com)' };
         }
 
@@ -185,7 +228,7 @@ export const validateEmail = (email) => {
  * @param {string} name - optional, to check if password contains name
  * @returns {{ isValid: boolean, message: string, strength: 'weak' | 'medium' | 'strong', requirements: object }}
  */
-export const validatePassword = (password, email = '', name = '') => {
+export const validatePassword = (password, email = '', name = '') => { // NOSONAR
     const requirements = {
         minLength: false,
         maxLength: true,
@@ -348,7 +391,7 @@ function hasSequentialChars(str, minLength) {
  * Check for repeating characters
  */
 function hasRepeatingChars(str, minLength) {
-    const regex = new RegExp(`(.)\\1{${minLength - 1},}`);
+    const regex = new RegExp(String.raw`(.)\1{${minLength - 1},}`);
     return regex.test(str);
 }
 
@@ -375,7 +418,7 @@ export const validateName = (name) => {
     }
 
     // Check for numbers - names should not contain numbers
-    if (/[0-9]/.test(trimmedName)) {
+    if (/\d/.test(trimmedName)) {
         return { isValid: false, message: 'Name cannot contain numbers' };
     }
 

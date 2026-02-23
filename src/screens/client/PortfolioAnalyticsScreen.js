@@ -12,8 +12,8 @@ import {
     Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme, formatCurrency } from '../../components/Theme';
 import { api } from '../../services/api';
 
@@ -23,10 +23,96 @@ const CARD_MARGIN = 16;
 const METRICS_GAP = 10;
 const METRIC_CARD_WIDTH = (SCREEN_WIDTH - (CARD_MARGIN * 2) - (CARD_PADDING * 2) - (METRICS_GAP * 3)) / 4;
 
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const toFiniteNumber = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeMonthLabel = (monthValue, index) => {
+    if (typeof monthValue === 'string' && monthValue.trim()) return monthValue;
+    const monthNumber = Number(monthValue);
+    if (Number.isFinite(monthNumber) && monthNumber >= 1 && monthNumber <= 12) {
+        return MONTH_LABELS[monthNumber - 1];
+    }
+    return MONTH_LABELS[index] || `M${index + 1}`;
+};
+
+const buildDefaultYearlyReturns = (returnsPercent = 0) => {
+    // No fabricated data — return empty if no real data exists
+    return [];
+};
+
+const normalizePortfolioAnalytics = (data) => {
+    const source = data || {};
+    const totalInvested = toFiniteNumber(source.totalInvested, 0);
+    const totalValuation = toFiniteNumber(source.totalValuation ?? source.totalCurrentValue, totalInvested);
+    // Returns calculation now comes from backend; only fallback to local if missing
+    const returnsPercent = toFiniteNumber(source.returnsPercent,
+        totalInvested > 0 ? ((totalValuation - totalInvested) / totalInvested) * 100 : 0
+    );
+
+    const monthlyReturnsRaw = Array.isArray(source.monthlyReturns) ? source.monthlyReturns : [];
+    const monthlyReturns = monthlyReturnsRaw
+        .map((item, index) => ({
+            month: normalizeMonthLabel(item?.month, index),
+            value: toFiniteNumber(item?.value ?? item?.return, 0),
+        }))
+        .filter((item) => item.month);
+
+    // No hardcoded fallback — show empty state if no real data
+    const normalizedMonthlyReturns = monthlyReturns;
+
+    const allocationRaw = Array.isArray(source.assetAllocation) ? source.assetAllocation : [];
+    const allocationTotal = allocationRaw.reduce((sum, item) => sum + toFiniteNumber(item?.value ?? item?.amount, 0), 0);
+    const allocationColors = ['#667EEA', '#10B981', '#F59E0B', '#EC4899', '#06B6D4', '#8B5CF6'];
+
+    const assetAllocation = allocationRaw.map((item, index) => {
+        const amount = toFiniteNumber(item?.amount ?? item?.value, 0);
+        const percentage = allocationTotal > 0
+            ? Number(((amount / allocationTotal) * 100).toFixed(1))
+            : toFiniteNumber(item?.percentage, 0);
+
+        return {
+            type: item?.type || item?.name || 'Other',
+            amount,
+            percentage,
+            color: item?.color || allocationColors[index % allocationColors.length],
+        };
+    });
+
+    // Performance metrics from backend — no hardcoded fallbacks
+    const performanceMetrics = {
+        cagr: source?.performanceMetrics?.cagr ?? null,
+        sharpeRatio: source?.performanceMetrics?.sharpeRatio ?? null,
+        maxDrawdown: source?.performanceMetrics?.maxDrawdown ?? null,
+        volatility: source?.performanceMetrics?.volatility ?? null,
+    };
+
+    const yearlyRaw = Array.isArray(source.yearlyReturns) ? source.yearlyReturns : [];
+    const yearlyReturns = yearlyRaw.map((item) => ({
+        year: String(item?.year || ''),
+        return: toFiniteNumber(item?.return ?? item?.value, 0),
+    }));
+
+    return {
+        ...source,
+        totalInvested,
+        totalValuation,
+        returnsPercent,
+        monthlyReturns: normalizedMonthlyReturns,
+        performanceMetrics,
+        yearlyReturns,
+        assetAllocation,
+    };
+};
+
 export default function PortfolioAnalyticsScreen({ navigation }) {
     const [analytics, setAnalytics] = useState(null);
     const [loading, setLoading] = useState(true);
     const [selectedPeriod, setSelectedPeriod] = useState('6M');
+    const [periodMetrics, setPeriodMetrics] = useState(null);
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -53,9 +139,14 @@ export default function PortfolioAnalyticsScreen({ navigation }) {
 
     const loadAnalytics = async () => {
         try {
-            const data = await api.getPortfolioAnalytics();
-            setAnalytics(data);
+            const [analyticsData, metricsData] = await Promise.all([
+                api.getPortfolioAnalytics(),
+                api.getPerformanceMetrics('6M').catch(() => null),
+            ]);
+            setAnalytics(normalizePortfolioAnalytics(analyticsData));
+            setPeriodMetrics(metricsData);
         } catch (error) {
+            console.error('Failed to load portfolio analytics:', error);
             Alert.alert('Error', 'Failed to load analytics');
         } finally {
             setLoading(false);
@@ -64,70 +155,36 @@ export default function PortfolioAnalyticsScreen({ navigation }) {
 
     const periods = ['1M', '3M', '6M', '1Y', 'ALL'];
 
-    // Generate data based on selected period
+    // Load real metrics from backend when period changes
+    useEffect(() => {
+        if (!loading && selectedPeriod) {
+            api.getPerformanceMetrics(selectedPeriod)
+                .then(data => setPeriodMetrics(data))
+                .catch(() => setPeriodMetrics(null));
+        }
+    }, [selectedPeriod]);
+
+    // Chart data from real backend metrics — no fabricated/random data
     const getChartDataForPeriod = (period) => {
+        // Use chart data from the performance metrics endpoint
+        if (periodMetrics?.chartData?.length > 0) {
+            return periodMetrics.chartData;
+        }
+
+        // Fallback: use the analytics monthly returns if available
         const baseData = analytics?.monthlyReturns || [];
+        if (baseData.length > 0) return baseData;
 
-        // Different data sets for different periods to show variation
-        const periodData = {
-            '1M': [
-                { month: 'W1', value: 2.1 + Math.random() * 2 },
-                { month: 'W2', value: 3.5 + Math.random() * 2 },
-                { month: 'W3', value: 1.8 + Math.random() * 2 },
-                { month: 'W4', value: 4.2 + Math.random() * 2 },
-            ],
-            '3M': [
-                { month: 'Oct', value: 5.2 },
-                { month: 'Nov', value: 7.1 },
-                { month: 'Dec', value: 4.8 },
-            ],
-            '6M': baseData.length > 0 ? baseData : [
-                { month: 'Aug', value: 4.2 },
-                { month: 'Sep', value: 5.8 },
-                { month: 'Oct', value: 3.9 },
-                { month: 'Nov', value: 7.1 },
-                { month: 'Dec', value: 6.2 },
-                { month: 'Jan', value: 8.5 },
-            ],
-            '1Y': [
-                { month: 'Jan', value: 3.2 },
-                { month: 'Feb', value: 4.5 },
-                { month: 'Mar', value: 2.1 },
-                { month: 'Apr', value: 5.8 },
-                { month: 'May', value: 4.3 },
-                { month: 'Jun', value: 6.7 },
-                { month: 'Jul', value: 5.1 },
-                { month: 'Aug', value: 7.9 },
-                { month: 'Sep', value: 4.8 },
-                { month: 'Oct', value: 6.2 },
-                { month: 'Nov', value: 8.1 },
-                { month: 'Dec', value: 9.3 },
-            ],
-            'ALL': [
-                { month: '2021', value: 12.5 },
-                { month: '2022', value: 8.3 },
-                { month: '2023', value: 15.7 },
-                { month: '2024', value: 11.2 },
-                { month: '2025', value: 18.9 },
-            ],
-        };
-
-        return periodData[period] || baseData;
+        // No data available — return empty (UI will show placeholder)
+        return [];
     };
 
-    // Get metrics based on selected period
+    // Get real metrics from backend — no hardcoded values
     const getMetricsForPeriod = (period) => {
-        const baseMetrics = analytics?.performanceMetrics || {};
-
-        const periodMetrics = {
-            '1M': { cagr: 8.2, sharpeRatio: 1.4, maxDrawdown: -3.1, volatility: 7.5 },
-            '3M': { cagr: 12.5, sharpeRatio: 1.6, maxDrawdown: -5.2, volatility: 9.8 },
-            '6M': { cagr: baseMetrics.cagr || 15.2, sharpeRatio: baseMetrics.sharpeRatio || 1.8, maxDrawdown: baseMetrics.maxDrawdown || -6.4, volatility: baseMetrics.volatility || 12.3 },
-            '1Y': { cagr: 18.7, sharpeRatio: 2.1, maxDrawdown: -8.5, volatility: 14.2 },
-            'ALL': { cagr: 22.4, sharpeRatio: 2.3, maxDrawdown: -12.1, volatility: 16.8 },
-        };
-
-        return periodMetrics[period] || baseMetrics;
+        if (periodMetrics?.metrics) {
+            return periodMetrics.metrics;
+        }
+        return analytics?.performanceMetrics || {};
     };
 
     const currentChartData = getChartDataForPeriod(selectedPeriod);
@@ -174,7 +231,7 @@ export default function PortfolioAnalyticsScreen({ navigation }) {
         );
     }
 
-    const MetricCard = ({ label, value, suffix, color, icon }) => (
+    const MetricCard = ({ label, value, suffix, color, icon }) => ( // NOSONAR
         <LinearGradient
             colors={['#FFFFFF', '#F8FAFC']}
             style={styles.metricCard}
@@ -184,14 +241,14 @@ export default function PortfolioAnalyticsScreen({ navigation }) {
             </View>
             <Text style={styles.metricLabel} numberOfLines={1}>{label}</Text>
             <Text style={[styles.metricValue, { color: color || theme.colors.textPrimary }]} numberOfLines={1}>
-                {typeof value === 'number' ? value.toFixed(1) : value}{suffix}
+                {Number.isFinite(Number(value)) ? Number(value).toFixed(1) : (value ?? 'N/A')}{value == null ? '' : suffix}
             </Text>
         </LinearGradient>
     );
 
     MetricCard.propTypes = {
         label: PropTypes.string.isRequired,
-        value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+        value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
         suffix: PropTypes.string,
         color: PropTypes.string,
         icon: PropTypes.string,
@@ -227,6 +284,16 @@ export default function PortfolioAnalyticsScreen({ navigation }) {
 
     const renderChart = () => {
         const data = currentChartData;
+        if (!data || data.length === 0) {
+            return (
+                <View style={[styles.chartContainer, { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 }]}>
+                    <Ionicons name="bar-chart-outline" size={48} color={theme.colors.textSecondary + '60'} />
+                    <Text style={{ color: theme.colors.textSecondary, marginTop: 12, fontSize: 14, textAlign: 'center' }}>
+                        No return data available for this period yet.
+                    </Text>
+                </View>
+            );
+        }
         const maxValue = Math.max(...data.map(d => d.value), 1);
 
         return (
@@ -263,7 +330,7 @@ export default function PortfolioAnalyticsScreen({ navigation }) {
                                         styles.barValue,
                                         isHighest && styles.barValueHighest
                                     ]}>
-                                        {item.value.toFixed(1)}%
+                                        {toFiniteNumber(item.value, 0).toFixed(1)}%
                                     </Text>
                                 </Animated.View>
 

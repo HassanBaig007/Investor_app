@@ -1,28 +1,134 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
     View,
     Text,
     ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    Alert,
-    TextInput,
     Modal,
+    StyleSheet,
+    TextInput,
     Dimensions,
     KeyboardAvoidingView,
     Platform,
     Keyboard,
+    TouchableOpacity,
+    ActivityIndicator,
+    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { theme, formatCurrency } from '../../components/Theme';
-import { projects, investors, getCurrentUser, userAccounts, addProjectSpending } from '../../data/mockData';
-import NotificationService from '../../services/notificationService';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import LinearGradient from 'react-native-linear-gradient';
+import { theme } from '../../components/Theme';
+
+import NoteModal from '../../components/modals/NoteModal';
+import MemberOptionsModal from '../../components/modals/MemberOptionsModal';
+import AddMemberModal from '../../components/modals/AddMemberModal';
+import SpendingDetailModal from '../../components/modals/SpendingDetailModal';
+import PendingApprovalsModal from '../../components/modals/PendingApprovalsModal';
+import LedgerSelectModal from '../../components/modals/LedgerSelectModal';
+import SubLedgerSelectModal from '../../components/modals/SubLedgerSelectModal';
+import { useProjectData } from '../../hooks/useProjectData';
+import { useSpendingLogic } from '../../hooks/useSpendingLogic';
+import { useLedgerLogic } from '../../hooks/useLedgerLogic';
+import { api } from '../../services/api';
+import { writeExportFile, deleteExportFile, FILE_EXPORT_ENCODING } from '../../utils/fileExport';
+import { shareFileUri } from '../../utils/fileShare';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const formatDateKey = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const parseDateKey = (value) => {
+    if (!value || typeof value !== 'string') return null;
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    const parsed = new Date(year, month - 1, day);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const getSpendingButtonLabel = (isSubmitting, memberCount) => {
+    if (isSubmitting) return 'Processing...';
+    if (memberCount > 1) return 'Submit for Approval';
+    return 'Add Spending';
+};
+
+const getMemberAvatarGradient = (isCreator, isSelf, gradients) => {
+    if (isCreator) return ['#F59E0B', '#D97706'];
+    if (isSelf) return ['#10B981', '#059669'];
+    return gradients.primary;
+};
+
+const renderSpendingItemRow = ({
+    spending,
+    ledgers,
+    onOpenDetail,
+    onOpenNote,
+    getUserName,
+    theme,
+}) => {
+    const isSelfFunded = !spending.fundedBy || spending.fundedBy === spending.addedBy;
+    const funderName = getUserName(spending.fundedBy, 'Unknown', spending.fundedByName);
+    const funderDisplay = isSelfFunded
+        ? getUserName(spending.addedBy, 'You', spending.addedByName)
+        : `Funded by ${funderName}`;
+
+    const ledgerName = ledgers.find((ledger) => ledger.id === spending.ledgerId)?.name;
+    const prefix = ledgerName || spending.category;
+
+    return (
+        <View
+            style={styles.spendingItem}
+        >
+            <TouchableOpacity
+                style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                onPress={() => onOpenDetail(spending)}
+                activeOpacity={0.7}
+            >
+                <View style={[styles.spendingIcon, { backgroundColor: spending.category === 'Service' ? '#EEF2FF' : '#D1FAE5' }]}>
+                    <MaterialCommunityIcons
+                        name={spending.category === 'Service' ? 'account-hard-hat' : 'package-variant'}
+                        size={22}
+                        color={spending.category === 'Service' ? '#6366F1' : '#10B981'}
+                    />
+                </View>
+                <View style={styles.spendingContent}>
+                    <Text style={styles.spendingDescription} numberOfLines={1}>{spending.description}</Text>
+                    <Text style={styles.spendingMeta}>
+                        {`${prefix} • ${funderDisplay} • ${spending.date}`}
+                    </Text>
+                </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={[styles.noteButton, spending.note && styles.noteButtonActive, { marginHorizontal: 8 }]}
+                onPress={(event) => onOpenNote(spending, event)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+                <MaterialCommunityIcons
+                    name={spending.note ? 'note-text' : 'note-plus-outline'}
+                    size={20}
+                    color={spending.note ? theme.colors.primary : theme.colors.textTertiary}
+                />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={styles.spendingRight}
+                onPress={() => onOpenDetail(spending)}
+                activeOpacity={0.7}
+            >
+                <Text style={styles.spendingAmount}>₹{spending.amount.toLocaleString()}</Text>
+                <MaterialCommunityIcons name="chevron-right" size={16} color={theme.colors.textTertiary} />
+            </TouchableOpacity>
+        </View>
+    );
+};
 
 /**
  * ProjectDetailScreen - Comprehensive Project View
@@ -35,582 +141,210 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
  * - Exit project button
  * - Pending/Approved spending sections
  */
-export default function ProjectDetailScreen({ navigation, route }) {
-    const projectId = route?.params?.projectId || 'PRJ002';
-    const focusOnAdd = route?.params?.focusOnAdd || false;
-    const project = projects.find(p => p.id === projectId);
+export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
+    // 1. Project Data Hook
+    const {
+        project, currentUser, projectMemberIds, isAdmin, isPassiveViewer, canAddData,
+        projectMembers, availableMembers, creator, totalApprovedSpent, totalPendingSpent,
+        handleExitProject, handleAddMember, handleRemoveMember, handleToggleMemberStatus,
+        pendingSpendings, setPendingSpendings, approvedSpendings, setApprovedSpendings,
+        isLoading, onRefresh
+    } = useProjectData(navigation, route);
 
-    // Ref for scrolling
+    // 2. Spending Logic Hook
+    const {
+        spendingAmount, setSpendingAmount, spendingDescription, setSpendingDescription,
+        spendingCategory, spendingDate, setSpendingDate,
+        showDatePicker, setShowDatePicker, paidToPerson, setPaidToPerson,
+        paidToPlace, setPaidToPlace, materialType, setMaterialType,
+        investmentType, setInvestmentType, selectedFunder, setSelectedFunder,
+        selectedLedgerId, setSelectedLedgerId, selectedSubLedger, setSelectedSubLedger,
+        actionFeedback, rejectedSpendings, formatAmount,
+        clearCategorySpecificState, othersSubLedgerValue, selectSpendingCategory, handleAddSpending,
+        handleApproveSpending, handleRejectSpending, isSubmitting
+    } = useSpendingLogic({
+        project,
+        currentUser,
+        projectMemberIds,
+        pendingSpendings,
+        setPendingSpendings,
+        approvedSpendings,
+        setApprovedSpendings,
+        onRefresh,
+    });
+
+    // 3. Ledger Logic Hook
+    const {
+        ledgers, selectedLedgerObj,
+        showLedgerSelectModal, setShowLedgerSelectModal,
+        showSubLedgerSelectModal, setShowSubLedgerSelectModal,
+        searchLedgerQuery, setSearchLedgerQuery,
+        newLedgerName, setNewLedgerName,
+        newSubLedgerName, setNewSubLedgerName,
+        editMode, setEditMode,
+        handleAddLedger, handleDeleteLedger,
+        handleAddSubLedger, handleDeleteSubLedger
+    } = useLedgerLogic(
+        project, selectedLedgerId, selectedSubLedger, setSelectedLedgerId, setSelectedSubLedger
+    );
+
+    // 4. Local UI State & Refs
     const scrollViewRef = useRef(null);
-
-    // Dynamic current user
-    const currentUser = getCurrentUser();
-
-    // Get navigation parameters
     const viewMode = route?.params?.viewMode || null;
 
-    // State for spending form
-    const [spendingAmount, setSpendingAmount] = useState('');
-    const [spendingDescription, setSpendingDescription] = useState('');
-    const [spendingCategory, setSpendingCategory] = useState('');
 
-    // NEW: Date selection state (default to current date)
-    const [spendingDate, setSpendingDate] = useState(new Date().toISOString().split('T')[0]);
-    const [showDatePicker, setShowDatePicker] = useState(false);
-
-    // NEW: Service-specific fields (person & place)
-    const [paidToPerson, setPaidToPerson] = useState('');
-
-    const [paidToPlace, setPaidToPlace] = useState('');
-
-    // NEW: Investment Type State
-    const [investmentType, setInvestmentType] = useState('self'); // 'self' or 'other'
-    const [selectedFunder, setSelectedFunder] = useState(null);
-
-    // NEW: Product-specific fields (material type)
-    const [materialType, setMaterialType] = useState('');
-    const materialTypes = ['Electronics', 'Construction', 'Office Supplies', 'Equipment', 'Raw Materials', 'Other'];
-
-    // NEW: Ledger & Subledger State
-    // NEW: Ledger & Subledger State
-    const [ledgers, setLedgers] = useState(project?.ledgers || []);
-    const [selectedLedgerId, setSelectedLedgerId] = useState('');
-    const [selectedSubLedger, setSelectedSubLedger] = useState('');
-
-    // UI States for Selection Modals
-    const [showLedgerSelectModal, setShowLedgerSelectModal] = useState(false);
-    const [showSubLedgerSelectModal, setShowSubLedgerSelectModal] = useState(false);
-
-    // UI States for Management (Admin)
-    const [searchLedgerQuery, setSearchLedgerQuery] = useState('');
-    const [newLedgerName, setNewLedgerName] = useState('');
-    const [newSubLedgerName, setNewSubLedgerName] = useState('');
-    const [editMode, setEditMode] = useState(false); // Toggle inside modals to show delete/add options
-
-    // Get currently selected ledger object
-    const selectedLedgerObj = ledgers.find(l => l.id === selectedLedgerId);
-
-    // Function to format amount with commas (Indian Format)
-    const formatAmount = (value) => {
-        if (!value) return '';
-        // Remove existing commas and non-numeric chars
-        const clean = value.replace(/[^0-9.]/g, '');
-        const parts = clean.split('.');
-        // Format integer part
-        let integerPart = parts[0];
-        if (integerPart.length > 3) {
-            const lastThree = integerPart.substring(integerPart.length - 3);
-            const otherNumbers = integerPart.substring(0, integerPart.length - 3);
-            integerPart = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + lastThree;
-        }
-        return parts.length > 1 ? integerPart + '.' + parts[1] : integerPart;
-    };
-
-
-    // State for modals
+    // Modals
     const [showAddMemberModal, setShowAddMemberModal] = useState(false);
     const [showMemberOptions, setShowMemberOptions] = useState(null);
     const [showSpendingDetail, setShowSpendingDetail] = useState(null);
     const [showPendingApprovals, setShowPendingApprovals] = useState(false);
+    const [showAllRecentSpendings, setShowAllRecentSpendings] = useState(false);
+    const [calendarViewMonth, setCalendarViewMonth] = useState(() => {
+        const selectedDate = parseDateKey(spendingDate) || new Date();
+        return new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    });
     const [searchQuery, setSearchQuery] = useState('');
 
-    // NEW: Filter by investor
+    // Filters & Views
     const [spendingFilter, setSpendingFilter] = useState('all');
-
-    // NEW: Show investor investments modal
     const [showInvestorBreakdown, setShowInvestorBreakdown] = useState(viewMode === 'details');
+    const currentUserId = String(currentUser?.id || currentUser?._id || '');
 
-    // Auto-expand based on navigation parameters (NO auto-scroll)
-    useEffect(() => {
-        if (viewMode === 'details') {
-            // Auto-expand investor breakdown for View Details mode
-            setShowInvestorBreakdown(true);
-        }
-        // Note: focusOnAdd just shows the form - no scrolling needed, page starts at top
-    }, [viewMode]);
-
-    // Instant feedback states
-    const [actionFeedback, setActionFeedback] = useState(null);
-    const [rejectedSpendings, setRejectedSpendings] = useState([]);
-
-    // State for project members
-    const [projectMemberIds, setProjectMemberIds] = useState(project?.projectInvestors || []);
-    const [projectAdminIds, setProjectAdminIds] = useState(project?.projectAdmins || []);
-
-    // Spending with approval system
-    const [pendingSpendings, setPendingSpendings] = useState(project?.pendingSpendings || []);
-    const [approvedSpendings, setApprovedSpendings] = useState(project?.spendings || []);
-
-    // Only 2 categories: Service & Product
     const categories = [
         { id: 'Service', icon: 'account-hard-hat', color: '#6366F1' },
         { id: 'Product', icon: 'package-variant', color: '#10B981' },
     ];
 
-    if (!project) {
-        return (
-            <SafeAreaView style={styles.container}>
-                <View style={styles.errorContainer}>
-                    <MaterialCommunityIcons name="alert-circle-outline" size={64} color={theme.colors.textTertiary} />
-                    <Text style={styles.errorText}>Project not found</Text>
-                    <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
-                        <Text style={styles.errorButtonText}>Go Back</Text>
-                    </TouchableOpacity>
-                </View>
-            </SafeAreaView>
-        );
-    }
+    const shouldShowCategorySelection = Boolean(
+        selectedLedgerId && selectedSubLedger === othersSubLedgerValue,
+    );
 
-    // Permission checks
-    const isCreator = project.createdBy === currentUser.id;
-    const isAdmin = isCreator || projectAdminIds.includes(currentUser.id);
-    const isMember = projectMemberIds.includes(currentUser.id);
-    const canAddSpending = isMember || isAdmin;
+    const memberMap = useMemo(() => {
+        const entries = (projectMembers || [])
+            .filter((member) => member?.id)
+            .map((member) => [String(member.id), member]);
+        return Object.fromEntries(entries);
+    }, [projectMembers]);
 
-    // Get project members sorted
-    const projectMembers = investors
-        .filter(i => projectMemberIds.includes(i.id))
-        .sort((a, b) => {
-            if (a.id === project.createdBy) return -1;
-            if (b.id === project.createdBy) return 1;
-            return 0;
-        });
-    const availableMembers = investors.filter(i => !projectMemberIds.includes(i.id));
+    const userAccounts = useMemo(() => {
+        const accounts = { ...memberMap };
+        if (currentUser?.id) {
+            accounts[String(currentUser.id)] = {
+                ...accounts[String(currentUser.id)],
+                id: currentUser.id,
+                name: currentUser.name || 'You',
+                email: currentUser.email || '',
+            };
+        }
+        if (currentUser?._id) {
+            accounts[String(currentUser._id)] = {
+                ...accounts[String(currentUser._id)],
+                id: currentUser._id,
+                name: currentUser.name || 'You',
+                email: currentUser.email || '',
+            };
+        }
+        return accounts;
+    }, [memberMap, currentUser]);
 
-    // Get creator info
-    // Get creator info
-    const creator = userAccounts[project.createdBy] || investors.find(i => i.id === project.createdBy);
-
-    // Role-based access control
-    // 'passive' = View Only (can see everything but cannot add expenses or perform actions)
-    // 'active' = Full Access (can add expenses, approve, reject, etc.)
-    const userRole = project.investorRoles?.[currentUser.id] || 'active'; // Default to active
-    const isPassiveViewer = userRole === 'passive';
-    const canAddData = !isPassiveViewer && (isMember || isAdmin);
-
-    // Calculate totals
-    const totalApprovedSpent = approvedSpendings.reduce((sum, s) => sum + (s.amount || 0), 0);
-    const totalPendingSpent = pendingSpendings.reduce((sum, s) => sum + (s.amount || 0), 0);
-
-    // Handle exit from project
-    const handleExitProject = () => {
-        if (isCreator) {
-            Alert.alert(
-                'Cannot Leave',
-                'As the project creator, you cannot leave this project. You can transfer ownership or delete the project.',
-                [{ text: 'OK' }]
-            );
-            return;
+    const getUserName = (userId, fallback = 'Unknown', nameHint = null) => {
+        if (nameHint) return nameHint;
+        if (!userId) return fallback;
+        if (String(userId) === String(currentUser?.id)) {
+            return currentUser?.name || 'You';
         }
 
-        Alert.alert(
-            'Leave Project',
-            `Are you sure you want to leave "${project.name}" ?\n\nYou will no longer have access to project data.`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Leave',
-                    style: 'destructive',
-                    onPress: () => {
-                        // Remove current user from project
-                        setProjectMemberIds(prev => prev.filter(id => id !== currentUser.id));
-                        const index = project.projectInvestors.indexOf(currentUser.id);
-                        if (index > -1) {
-                            project.projectInvestors.splice(index, 1);
-                        }
-                        Alert.alert('Left Project', 'You have left the project successfully.');
-                        navigation.goBack();
-                    }
-                }
-            ]
-        );
+        return memberMap[String(userId)]?.name || fallback;
     };
 
-    // Add spending - goes to pending first
-    const handleAddSpending = () => {
-        const cleanedAmount = spendingAmount.replace(/[^0-9.]/g, '');
-        const parsedAmount = parseFloat(cleanedAmount);
-
-        if (!cleanedAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
-            Alert.alert('Invalid Amount', 'Please enter a valid amount greater than 0');
-            return;
-        }
-        if (!spendingDescription.trim()) {
-            Alert.alert('Missing Description', 'Please add a description for this spending');
-            return;
-        }
-        if (!spendingCategory) {
-            Alert.alert('Select Category', 'Please select Service or Product');
-            return;
-        }
-
-        // Validate category-specific fields
-        if (spendingCategory === 'Service' && (!paidToPerson.trim() || !paidToPlace.trim())) {
-            Alert.alert('Missing Details', 'Please enter the person name and place for this service');
-            return;
-        }
-        if (spendingCategory === 'Product' && !materialType) {
-            Alert.alert('Missing Details', 'Please select the material type for this product');
-            return;
-        }
-
-        // Validate Funder if Investment Type is Other
-        if (investmentType === 'other' && !selectedFunder) {
-            Alert.alert('Select Funder', 'Please select which member funded this spending');
-            return;
-        }
-
-        // Create spending with approval tracking and new fields
-        const newSpending = {
-            id: Date.now().toString(),
-            amount: parsedAmount,
-            description: spendingDescription.trim(),
-            category: spendingCategory,
-            date: spendingDate,
-            time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
-            addedBy: currentUser.id,
-            status: 'pending',
-            // NEW: Category-specific details
-            paidTo: spendingCategory === 'Service' ? {
-                person: paidToPerson.trim(),
-                place: paidToPlace.trim(),
-            } : null,
-            materialType: spendingCategory === 'Product' ? materialType : null,
-            ledgerId: selectedLedgerId,
-            subLedger: selectedSubLedger,
-            approvals: {
-                [currentUser.id]: { status: 'approved', at: new Date().toISOString() }
-            },
-            rejections: {},
-            totalMembers: projectMemberIds.length,
-            // NEW: Track who funded it
-            fundedBy: investmentType === 'self' ? currentUser.id : selectedFunder,
-            investmentType: investmentType,
-        };
-
-        // Check if all other members have approved (if only 1 member, auto-approve)
-        if (projectMemberIds.length <= 1) {
-            const approvedSpending = { ...newSpending, status: 'approved' };
-            setApprovedSpendings([approvedSpending, ...approvedSpendings]);
-
-            // ✅ AUTO-SYNC: Add to central expense tracker immediately
-            addProjectSpending(approvedSpending, {
-                id: project.id,
-                name: project.name,
-            });
-
-            NotificationService.notifySpendingAdded(parsedAmount, spendingCategory, project.name);
-            Alert.alert('Success', `₹${parsedAmount.toLocaleString()} added to spendings & expense history!`);
-        } else {
-            setPendingSpendings([newSpending, ...pendingSpendings]);
-            NotificationService.sendLocalNotification(
-                '📋 New Spending Approval',
-                `${currentUser.name} added ₹${parsedAmount.toLocaleString()} - needs approval`,
-                { type: 'spending_approval', projectId: project.id }
-            );
-            Alert.alert(
-                'Pending Approval',
-                `Spending of ₹${parsedAmount.toLocaleString()} has been submitted for approval from all active project members.`
-            );
-        }
-
-        // Reset all form fields
-        setSpendingAmount('');
-        setSpendingDescription('');
-        setSpendingCategory('');
-        setSpendingDate(new Date().toISOString().split('T')[0]);
-        setPaidToPerson('');
-        setPaidToPlace('');
-        setPaidToPlace('');
-        setMaterialType('');
-        setSelectedLedgerId('');
-        setSelectedSubLedger('');
-        setInvestmentType('self');
-        setSelectedFunder(null);
+    const getMemberUser = (member) => {
+        if (!member?.id) return member;
+        return memberMap[String(member.id)] || member;
     };
 
-    // Show instant feedback
-    const showFeedback = (type, message) => {
-        setActionFeedback({ type, message });
-        setTimeout(() => setActionFeedback(null), 3000);
+    const getSpendingInitiatorId = (spending) => {
+        if (!spending) return '';
+        if (spending.addedById) return String(spending.addedById);
+        if (typeof spending.addedBy === 'string') return String(spending.addedBy);
+        if (spending.addedBy?._id) return String(spending.addedBy._id);
+        if (spending.addedBy?.id) return String(spending.addedBy.id);
+        return '';
     };
 
-    // Approve a pending spending with instant feedback
-    const handleApproveSpending = (spending) => {
-        const updatedApprovals = {
-            ...spending.approvals,
-            [currentUser.id]: { status: 'approved', at: new Date().toISOString(), name: currentUser.name }
-        };
+    const getSpendingFunderId = (spending) => {
+        if (!spending) return '';
+        if (spending.fundedById) return String(spending.fundedById);
+        if (typeof spending.fundedBy === 'string') return String(spending.fundedBy);
+        if (spending.fundedBy?._id) return String(spending.fundedBy._id);
+        if (spending.fundedBy?.id) return String(spending.fundedBy.id);
+        return getSpendingInitiatorId(spending);
+    };
 
-        // Check if all ACTIVE members have approved
-        // Get list of active members
-        const activeMembers = projectMemberIds.filter(id => {
-            const role = project.investorRoles?.[id] || 'active';
-            return role === 'active';
-        });
-
-        const approvedCount = Object.values(updatedApprovals).filter(a => a.status === 'approved').length;
-        // Total needed is count of active members
-        const allApproved = approvedCount >= activeMembers.length;
-
-        // Instant UI update
-        const updatedPending = pendingSpendings.map(s =>
-            s.id === spending.id ? { ...s, approvals: updatedApprovals } : s
-        );
-        setPendingSpendings(updatedPending);
-
-        // Show instant feedback
-        showFeedback('approve', `✓ You approved this spending`);
-
-        if (allApproved) {
-            // Move to approved spendings after a short delay for visual effect
-            setTimeout(() => {
-                const approvedSpending = { ...spending, status: 'approved', approvals: updatedApprovals };
-                setApprovedSpendings([approvedSpending, ...approvedSpendings]);
-                setPendingSpendings(prev => prev.filter(s => s.id !== spending.id));
-
-                // ✅ AUTO-SYNC: Add to central expense tracker for all project members
-                addProjectSpending(approvedSpending, {
-                    id: project.id,
-                    name: project.name,
-                });
-
-                showFeedback('success', `🎉 Spending approved & added to expense history!`);
-                NotificationService.notifySpendingAdded(spending.amount, spending.category, project.name);
-            }, 500);
+    const getSpendingTrackedAccountId = (spending) => {
+        if (!spending) return '';
+        const status = String(spending.status || '').toLowerCase();
+        if (status === 'approved') {
+            return getSpendingFunderId(spending) || getSpendingInitiatorId(spending);
         }
+        return getSpendingInitiatorId(spending);
     };
 
-    // Reject a pending spending with instant feedback
-    const handleRejectSpending = (spending) => {
-        Alert.alert(
-            'Reject Spending',
-            'Are you sure you want to reject this spending?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Reject',
-                    style: 'destructive',
-                    onPress: () => {
-                        const rejectedSpending = {
-                            ...spending,
-                            status: 'rejected',
-                            rejectedBy: currentUser.id,
-                            rejectedAt: new Date().toISOString(),
-                            rejectorName: currentUser.name
-                        };
-
-                        // Instant UI update - move to rejected list
-                        setPendingSpendings(pendingSpendings.filter(s => s.id !== spending.id));
-                        setRejectedSpendings([rejectedSpending, ...rejectedSpendings]);
-
-                        // Show instant feedback
-                        showFeedback('reject', `✗ Spending rejected`);
-
-                        NotificationService.sendLocalNotification(
-                            '❌ Spending Rejected',
-                            `${currentUser.name} rejected a spending of ₹${spending.amount.toLocaleString()} `,
-                            { type: 'spending_rejected', projectId: project.id }
-                        );
-                    }
-                }
-            ]
-        );
+    const getRefId = (value) => {
+        if (!value) return null;
+        if (typeof value === 'string') return String(value);
+        if (value._id) return String(value._id);
+        if (value.id) return String(value.id);
+        return null;
     };
 
-    // Invite member to project
-    const handleAddMember = (member) => {
-        // Check if already invited
-        if (project.pendingInvitations && project.pendingInvitations.some(inv => inv.userId === member.id)) {
-            Alert.alert('Already Invited', `${member.name} has already been invited.`);
-            return;
-        }
+    const effectiveApproverIds = useMemo(() => {
+        const activeInvestors = (project?.investors || []).filter((inv) => (inv?.role || 'active') === 'active');
+        const creatorId = getRefId(project?.createdBy);
+        const hasCreator = activeInvestors.some((inv) => getRefId(inv?.user) === creatorId);
 
-        Alert.alert(
-            'Invite Member',
-            `Send start invitation to ${member.name}?`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Invite as Passive',
-                    onPress: () => sendInvitation(member, 'passive')
-                },
-                {
-                    text: 'Invite as Active',
-                    onPress: () => sendInvitation(member, 'active')
-                }
-            ]
-        );
-    };
+        const ids = activeInvestors.map((inv) => getRefId(inv?.user)).filter(Boolean);
+        if (creatorId && !hasCreator) ids.push(creatorId);
 
-    const sendInvitation = (member, role) => {
-        if (!project.pendingInvitations) {
-            project.pendingInvitations = [];
-        }
+        return [...new Set(ids)];
+    }, [project]);
 
-        project.pendingInvitations.push({
-            id: `INV${Date.now()}`,
-            userId: member.id,
-            role: role,
-            invitedBy: currentUser.id,
-            invitedAt: new Date().toISOString(),
-        });
+    const pendingApprovalRequestsCount = useMemo(() => {
+        if (!pendingSpendings?.length) return 0;
 
-        // Trigger update
-        setProjectMemberIds([...project.projectInvestors]); // Just to force re-render if needed, but really just cleaning up state
-
-        NotificationService.sendLocalNotification(
-            'Invitation Sent',
-            `Invitation sent to ${member.name}`,
-            { type: 'invitation', projectId: project.id }
-        );
-
-        Alert.alert('✅ Invitation Sent', `Invitation sent to ${member.name} to join as ${role}.`);
-        setShowAddMemberModal(false);
-        setSearchQuery('');
-    };
-
-    // Remove member from project
-    const handleRemoveMember = (member) => {
-        if (member.id === project.createdBy) {
-            Alert.alert('Cannot Remove', 'The project creator cannot be removed');
-            return;
-        }
-
-        Alert.alert(
-            'Remove Member',
-            `Remove ${member.name} from "${project.name}" ? `,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Remove',
-                    style: 'destructive',
-                    onPress: () => {
-                        setProjectMemberIds(prev => prev.filter(id => id !== member.id));
-                        setProjectAdminIds(prev => prev.filter(id => id !== member.id));
-                        const index = project.projectInvestors.indexOf(member.id);
-                        if (index > -1) project.projectInvestors.splice(index, 1);
-                        NotificationService.notifyMemberRemoved(member.name, project.name);
-                        Alert.alert('Removed', `${member.name} has been removed`);
-                        setShowMemberOptions(null);
-                    }
-                }
-            ]
-        );
-    };
-
-    // Toggle Member Status (Active/Passive)
-    const handleToggleMemberStatus = (member) => {
-        const currentRole = project.investorRoles?.[member.id] || 'active';
-        const newRole = currentRole === 'active' ? 'passive' : 'active';
-
-        Alert.alert(
-            `Make ${newRole === 'active' ? 'Active' : 'Passive'}?`,
-            `Change ${member.name}'s status to ${newRole === 'active' ? 'Active (Full Access)' : 'Passive (View Only)'}?`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Confirm',
-                    onPress: () => {
-                        // In a real app, this would be an API call
-                        if (!project.investorRoles) project.investorRoles = {};
-                        project.investorRoles[member.id] = newRole;
-
-                        // Force update local state if needed (or just modal state to refresh)
-                        setShowMemberOptions(null);
-                        Alert.alert('Success', `Updated ${member.name}'s role to ${newRole}`);
-
-                        // Trigger a re-render by updating dummy state or similar if needed, 
-                        // but setting showMemberOptions(null) usually triggers re-render of parent/modal
-                        setProjectMemberIds([...projectMemberIds]); // Hack to force re-render
-                    }
-                }
-            ]
-        );
-    };
-
-    // --- LEDGER MANAGEMENT FUNCTIONS ---
-
-    const handleAddLedger = () => {
-        if (!newLedgerName.trim()) return;
-
-        // Removed limit check as requested
-
-        const newLedger = { id: Date.now().toString(), name: newLedgerName.trim(), subLedgers: [] };
-        const updatedLedgers = [...ledgers, newLedger];
-        setLedgers(updatedLedgers);
-        project.ledgers = updatedLedgers;
-        setNewLedgerName('');
-        Alert.alert('Success', 'Ledger added successfully!');
-    };
-
-    const handleDeleteLedger = (id) => {
-        Alert.alert('Delete Ledger', 'Are you sure?', [
-            { text: 'Cancel' },
-            {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: () => {
-                    const updatedLedgers = ledgers.filter(l => l.id !== id);
-                    setLedgers(updatedLedgers);
-                    project.ledgers = updatedLedgers;
-                    if (selectedLedgerId === id) {
-                        setSelectedLedgerId('');
-                        setSelectedSubLedger('');
-                    }
-                }
+        return pendingSpendings.reduce((total, spending) => {
+            if (spending?.approvalSummary && Number.isFinite(Number(spending.approvalSummary.pendingRequiredCount))) {
+                return total + Number(spending.approvalSummary.pendingRequiredCount || 0);
             }
-        ]);
-    };
 
-    const handleAddSubLedger = () => {
-        if (!selectedLedgerId || !newSubLedgerName.trim()) return;
+            const votedIds = new Set(
+                Object.entries(spending?.approvals || {}).map(([approvalKey, approval]) => {
+                    return String(getRefId(approval?.user) || approvalKey);
+                })
+            );
 
-        const updatedLedgers = ledgers.map(l => {
-            if (l.id === selectedLedgerId) {
-                // Check dupes
-                if (l.subLedgers && l.subLedgers.includes(newSubLedgerName.trim())) {
-                    Alert.alert('Exists', 'This sub-ledger already exists.');
-                    return l;
-                }
-                const newSubs = l.subLedgers ? [...l.subLedgers, newSubLedgerName.trim()] : [newSubLedgerName.trim()];
-                return { ...l, subLedgers: newSubs };
-            }
-            return l;
-        });
+            const waitingForThisSpending = effectiveApproverIds.filter((id) => !votedIds.has(String(id))).length;
+            return total + Math.max(waitingForThisSpending, 0);
+        }, 0);
+    }, [pendingSpendings, effectiveApproverIds]);
 
-        setLedgers(updatedLedgers);
-        project.ledgers = updatedLedgers;
-        setNewSubLedgerName('');
-        Alert.alert('Success', 'Sub-Ledger added successfully!');
-    };
+    // Material Types constant for UI
 
-    const handleDeleteSubLedger = (subName) => {
-        Alert.alert('Delete Sub-Ledger', `Are you sure you want to delete "${subName}"?`, [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: () => {
-                    const updatedLedgers = ledgers.map(l => {
-                        if (l.id === selectedLedgerId) {
-                            return { ...l, subLedgers: l.subLedgers.filter(s => s !== subName) };
-                        }
-                        return l;
-                    });
-                    setLedgers(updatedLedgers);
-                    project.ledgers = updatedLedgers;
-                    if (selectedSubLedger === subName) setSelectedSubLedger('');
-                    Alert.alert('Success', 'Sub-Ledger deleted successfully');
-                }
-            }
-        ]);
-    };
+
+    // Auto-expand based on navigation parameters
+    useEffect(() => {
+        if (viewMode === 'details') {
+            setShowInvestorBreakdown(true);
+        }
+    }, [viewMode]);
+
+
 
     // State for Note Modal
     const [showNoteModal, setShowNoteModal] = useState(false);
     const [currentNoteSpending, setCurrentNoteSpending] = useState(null);
     const [noteContent, setNoteContent] = useState('');
+    const [exportingProject, setExportingProject] = useState(false);
+    const [showExportFormatModal, setShowExportFormatModal] = useState(false);
 
     // Handle opening note modal
     const handleOpenNote = (spending, e) => {
@@ -619,6 +353,60 @@ export default function ProjectDetailScreen({ navigation, route }) {
         setNoteContent(spending.note || '');
         setShowNoteModal(true);
     };
+
+    const handleSpendingFilterChange = (nextFilter) => {
+        setSpendingFilter(nextFilter);
+        setShowAllRecentSpendings(false);
+    };
+
+    const selectedFilter = String(spendingFilter);
+    const allRecentSpendings = [...approvedSpendings, ...pendingSpendings]
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    const filteredRecentSpendings = spendingFilter === 'all'
+        ? allRecentSpendings
+        : allRecentSpendings.filter((spending) => getSpendingTrackedAccountId(spending) === selectedFilter);
+    const recentSpendingsPreview = filteredRecentSpendings.slice(0, 2);
+    const hasMoreRecentSpendings = filteredRecentSpendings.length > 2;
+    const todayDateKey = formatDateKey(new Date());
+
+    const calendarMonthLabel = useMemo(
+        () => calendarViewMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+        [calendarViewMonth],
+    );
+
+    const calendarDays = useMemo(() => {
+        const year = calendarViewMonth.getFullYear();
+        const month = calendarViewMonth.getMonth();
+        const firstDayOfMonth = new Date(year, month, 1);
+        const lastDayOfMonth = new Date(year, month + 1, 0);
+        const startOffset = firstDayOfMonth.getDay();
+        const daysInMonth = lastDayOfMonth.getDate();
+
+        const cells = [];
+        for (let index = 0; index < startOffset; index += 1) {
+            cells.push({
+                key: `empty-${year}-${month + 1}-${index}`,
+                isEmpty: true,
+            });
+        }
+
+        for (let dayNumber = 1; dayNumber <= daysInMonth; dayNumber += 1) {
+            const cellDate = new Date(year, month, dayNumber);
+            cells.push({
+                key: formatDateKey(cellDate),
+                dayNumber,
+                isFuture: formatDateKey(cellDate) > todayDateKey,
+            });
+        }
+
+        return cells;
+    }, [calendarViewMonth, todayDateKey]);
+
+    useEffect(() => {
+        if (!showDatePicker) return;
+        const selectedDate = parseDateKey(spendingDate) || new Date();
+        setCalendarViewMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+    }, [showDatePicker, spendingDate]);
 
     // Save note
     const handleSaveNote = () => {
@@ -632,190 +420,104 @@ export default function ProjectDetailScreen({ navigation, route }) {
         }
     };
 
-    // Render spending item (clickable for details)
-    const renderSpendingItem = (spending) => {
-        const addedByUser = userAccounts[spending.addedBy];
-        return (
-            <TouchableOpacity
-                key={spending.id}
-                style={styles.spendingItem}
-                onPress={() => setShowSpendingDetail(spending)}
-                activeOpacity={0.7}
-            >
-                <View style={[styles.spendingIcon, { backgroundColor: spending.category === 'Service' ? '#EEF2FF' : '#D1FAE5' }]}>
-                    <MaterialCommunityIcons
-                        name={spending.category === 'Service' ? 'account-hard-hat' : 'package-variant'}
-                        size={22}
-                        color={spending.category === 'Service' ? '#6366F1' : '#10B981'}
-                    />
-                </View>
-                <View style={styles.spendingContent}>
-                    <Text style={styles.spendingMeta}>
-                        {(() => {
-                            const isSelfFunded = !spending.fundedBy || spending.fundedBy === spending.addedBy;
-                            const funderName = userAccounts[spending.fundedBy]?.name || 'Unknown';
-                            // "if the user select the self account button the funded by shouldnt display it should just display the user name"
-                            const funderDisplay = isSelfFunded
-                                ? (userAccounts[spending.addedBy]?.name || 'You')
-                                : `Funded by ${funderName}`;
+    const handleProjectDetailsExport = async (format = 'xlsx') => {
+        let fileUri = null;
+        try {
+            if (exportingProject) return;
 
-                            // Combine with other meta info
-                            const ledgerName = ledgers.find(l => l.id === spending.ledgerId)?.name;
-                            const prefix = ledgerName || spending.category;
+            const projectId = project?._id || project?.id;
+            if (!projectId) {
+                Alert.alert('Export Failed', 'Project ID is missing. Please refresh and try again.');
+                return;
+            }
 
-                            return `${prefix} • ${funderDisplay} • ${spending.date}`;
-                        })()}
-                    </Text>
-                </View>
+            setExportingProject(true);
 
-                {/* Note Button */}
-                <TouchableOpacity
-                    style={[styles.noteButton, spending.note && styles.noteButtonActive]}
-                    onPress={(e) => handleOpenNote(spending, e)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <MaterialCommunityIcons
-                        name={spending.note ? "note-text" : "note-plus-outline"}
-                        size={20}
-                        color={spending.note ? theme.colors.primary : theme.colors.textTertiary}
-                    />
-                </TouchableOpacity>
+            const exportPayload = await api.exportProjectDetails(projectId, format);
+            const nowDate = new Date().toISOString().split('T')[0];
+            const content = exportPayload?.content || '';
+            const fileName = exportPayload?.filename || `project_details_${nowDate}.${format}`;
+            const mimeType =
+                exportPayload?.mimeType ||
+                (format === 'xlsx'
+                    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    : 'text/csv;charset=utf-8');
 
-                <View style={styles.spendingRight}>
-                    <Text style={styles.spendingAmount}>₹{spending.amount.toLocaleString()}</Text>
-                    <MaterialCommunityIcons name="chevron-right" size={16} color={theme.colors.textTertiary} />
-                </View>
-            </TouchableOpacity>
-        );
+            const shouldUseBase64 = exportPayload?.encoding === 'base64' || format === 'xlsx';
+            const writeEncoding = shouldUseBase64
+                ? FILE_EXPORT_ENCODING.BASE64
+                : FILE_EXPORT_ENCODING.UTF8;
+
+            const writableContent =
+                !shouldUseBase64 && format === 'csv' && !String(content).startsWith('\uFEFF')
+                    ? `\uFEFF${content}`
+                    : content;
+
+            fileUri = await writeExportFile({
+                fileName,
+                content: writableContent,
+                encoding: writeEncoding,
+            });
+
+            const didShare = await shareFileUri(fileUri, {
+                dialogTitle: 'Export Project Details',
+                mimeType,
+            });
+
+            if (!didShare) {
+                Alert.alert('Export Complete', `File saved successfully: ${fileName}`);
+            }
+        } catch (error) {
+            console.error('Project export failed:', error);
+            const backendMessage = error?.response?.data?.message;
+            Alert.alert(
+                'Export Failed',
+                backendMessage || error?.friendlyMessage || 'Could not export project details. Please try again.'
+            );
+        } finally {
+            await deleteExportFile(fileUri);
+            setExportingProject(false);
+        }
     };
 
-    // Render pending spending item - Fixed layout
-    const renderPendingSpendingItem = (spending) => {
-        const addedByUser = userAccounts[spending.addedBy];
-        const myApproval = spending.approvals?.[currentUser.id];
-        const approvedCount = Object.values(spending.approvals || {}).filter(a => a.status === 'approved').length;
-        const isMySpending = spending.addedBy === currentUser.id;
+    const showProjectExportOptions = () => {
+        if (exportingProject) return;
 
-        // Get list of who approved
-        const approvedByNames = Object.entries(spending.approvals || {})
-            .filter(([_, a]) => a.status === 'approved')
-            .map(([userId]) => userAccounts[userId]?.name || 'Unknown');
-
-        return (
-            <View key={spending.id} style={styles.pendingCard}>
-                {/* Top Row: Category Icon + Amount */}
-                <View style={styles.pendingTopRow}>
-                    <View style={[styles.pendingCategoryIcon, { backgroundColor: spending.category === 'Service' ? '#EEF2FF' : '#D1FAE5' }]}>
-                        <MaterialCommunityIcons
-                            name={spending.category === 'Service' ? 'account-hard-hat' : 'package-variant'}
-                            size={24}
-                            color={spending.category === 'Service' ? '#6366F1' : '#10B981'}
-                        />
-                    </View>
-                    <View style={styles.pendingAmountContainer}>
-                        <Text style={styles.pendingAmountLabel}>Amount</Text>
-                        <Text style={styles.pendingAmountValue}>₹{spending.amount.toLocaleString()}</Text>
-                    </View>
-                </View>
-
-                {/* Description */}
-                <Text style={styles.pendingDescriptionText}>{spending.description}</Text>
-
-                {/* Meta Info */}
-                <View style={styles.pendingMetaRow}>
-                    <View style={styles.pendingMetaItem}>
-                        <MaterialCommunityIcons name="account" size={14} color={theme.colors.textTertiary} />
-                        <Text style={styles.pendingMetaText}>{addedByUser?.name || 'Unknown'}</Text>
-                    </View>
-                    <View style={styles.pendingMetaItem}>
-                        <MaterialCommunityIcons name="calendar" size={14} color={theme.colors.textTertiary} />
-                        <Text style={styles.pendingMetaText}>{spending.date}</Text>
-                    </View>
-                    <View style={styles.pendingMetaItem}>
-                        <MaterialCommunityIcons name="clock-outline" size={14} color={theme.colors.textTertiary} />
-                        <Text style={styles.pendingMetaText}>{spending.time}</Text>
-                    </View>
-                </View>
-
-                {/* Approval Progress */}
-                <View style={styles.approvalProgressSection}>
-                    <View style={styles.approvalProgressHeader}>
-                        <Text style={styles.approvalProgressTitle}>Approval Progress</Text>
-
-                        <Text style={styles.approvalProgressCount}>
-                            {approvedCount} of {Object.values(project.investorRoles || {}).filter(r => r === 'active').length || projectMemberIds.length}
-                        </Text>
-                    </View>
-                    <View style={styles.approvalProgressBar}>
-                        <View style={[styles.approvalProgressFill, { width: `${(approvedCount / (Object.values(project.investorRoles || {}).filter(r => r === 'active').length || projectMemberIds.length)) * 100}% ` }]} />
-                    </View>
-                    {approvedByNames.length > 0 && (
-                        <Text style={styles.approvedByText}>Approved by: {approvedByNames.join(', ')}</Text>
-                    )}
-                </View>
-
-                {/* Action Buttons - Only for Active Members */}
-                {!myApproval && !isMySpending && !isPassiveViewer && (
-                    <View style={styles.pendingActionButtons}>
-                        <TouchableOpacity
-                            style={styles.rejectActionBtn}
-                            onPress={() => handleRejectSpending(spending)}
-                        >
-                            <MaterialCommunityIcons name="close-circle" size={20} color="#EF4444" />
-                            <Text style={styles.rejectActionText}>Reject</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.approveActionBtn}
-                            onPress={() => handleApproveSpending(spending)}
-                        >
-                            <MaterialCommunityIcons name="check-circle" size={20} color="white" />
-                            <Text style={styles.approveActionText}>Approve</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
-                {/* Your Status Badge */}
-                {myApproval && (
-                    <View style={styles.yourStatusBadge}>
-                        <MaterialCommunityIcons name="check-decagram" size={18} color="#10B981" />
-                        <Text style={styles.yourStatusText}>You approved this spending</Text>
-                    </View>
-                )}
-
-                {isMySpending && !myApproval && (
-                    <View style={styles.yourStatusBadge}>
-                        <MaterialCommunityIcons name="account-check" size={18} color="#6366F1" />
-                        <Text style={[styles.yourStatusText, { color: '#6366F1' }]}>You submitted this</Text>
-                    </View>
-                )}
-
-                {/* Passive Member View - No Actions */}
-                {isPassiveViewer && !myApproval && !isMySpending && (
-                    <View style={styles.yourStatusBadge}>
-                        <MaterialCommunityIcons name="eye-off-outline" size={18} color={theme.colors.textSecondary} />
-                        <Text style={[styles.yourStatusText, { color: theme.colors.textSecondary }]}>View Only (Cannot Approve)</Text>
-                    </View>
-                )}
-            </View>
-        );
-
+        setShowExportFormatModal(true);
     };
 
-    // Render rejected spending item
-    const renderRejectedSpendingItem = (spending) => {
-        const addedByUser = userAccounts[spending.addedBy];
-        return (
-            <View key={spending.id} style={styles.rejectedCard}>
-                <View style={styles.rejectedHeader}>
-                    <MaterialCommunityIcons name="close-circle" size={24} color="#EF4444" />
-                    <View style={styles.rejectedInfo}>
-                        <Text style={styles.rejectedDescription}>{spending.description}</Text>
-                        <Text style={styles.rejectedMeta}>₹{spending.amount.toLocaleString()} • Rejected by {spending.rejectorName}</Text>
-                    </View>
-                </View>
-            </View>
-        );
+    const handleSelectExportFormat = (format) => {
+        if (exportingProject) return;
+        setShowExportFormatModal(false);
+        handleProjectDetailsExport(format);
     };
+
+
+
+    if (isLoading && !project) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.errorContainer}>
+                    <ActivityIndicator size="large" color={theme.colors.primary} />
+                    <Text style={[styles.errorText, { marginTop: 16 }]}>Loading project...</Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    if (!project && !isLoading) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.errorContainer}>
+                    <MaterialCommunityIcons name="alert-circle-outline" size={64} color={theme.colors.textTertiary} />
+                    <Text style={styles.errorText}>Project not found</Text>
+                    <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
+                        <Text style={styles.errorButtonText}>Go Back</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.container}>
@@ -830,12 +532,29 @@ export default function ProjectDetailScreen({ navigation, route }) {
                         {projectMembers.length} members • {creator?.name || 'Unknown'}
                     </Text>
                 </View>
-                <TouchableOpacity onPress={handleExitProject} style={styles.exitButtonWithText}>
-                    <View style={styles.exitIconContainer}>
-                        <MaterialCommunityIcons name="exit-run" size={20} color="#EF4444" />
-                    </View>
-                    <Text style={styles.exitButtonLabel}>Exit</Text>
-                </TouchableOpacity>
+                <View style={styles.headerActions}>
+                    <TouchableOpacity
+                        onPress={showProjectExportOptions}
+                        style={styles.downloadButtonWithText}
+                        disabled={exportingProject}
+                    >
+                        <View style={styles.downloadIconContainer}>
+                            {exportingProject ? (
+                                <ActivityIndicator size="small" color={theme.colors.primary} />
+                            ) : (
+                                <MaterialCommunityIcons name="download" size={20} color={theme.colors.primary} />
+                            )}
+                        </View>
+                        <Text style={styles.downloadButtonLabel}>Export</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={handleExitProject} style={styles.exitButtonWithText}>
+                        <View style={styles.exitIconContainer}>
+                            <MaterialCommunityIcons name="exit-run" size={20} color="#EF4444" />
+                        </View>
+                        <Text style={styles.exitButtonLabel}>Exit</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <KeyboardAvoidingView
@@ -858,7 +577,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                             </View>
                             <View style={styles.pendingAlertContent}>
                                 <Text style={styles.pendingAlertTitle}>
-                                    {pendingSpendings.length} pending approval{pendingSpendings.length > 1 ? 's' : ''}
+                                    {pendingApprovalRequestsCount} pending approval{pendingApprovalRequestsCount > 1 ? 's' : ''}
                                 </Text>
                                 <Text style={styles.pendingAlertSubtitle}>Tap to review and vote</Text>
                             </View>
@@ -911,7 +630,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                 <Text style={styles.fieldLabel}>📅 Date</Text>
                                 <TouchableOpacity
                                     style={styles.datePickerButton}
-                                    onPress={() => setShowDatePicker(!showDatePicker)}
+                                    onPress={() => setShowDatePicker(true)}
                                 >
                                     <MaterialCommunityIcons name="calendar" size={20} color="#6366F1" />
                                     <Text style={styles.datePickerText}>
@@ -922,48 +641,8 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                             year: 'numeric'
                                         })}
                                     </Text>
-                                    <MaterialCommunityIcons name="chevron-down" size={18} color={theme.colors.textSecondary} />
+                                    <MaterialCommunityIcons name="chevron-right" size={18} color={theme.colors.textSecondary} />
                                 </TouchableOpacity>
-
-                                {/* 7-Day Scrollable Calendar */}
-                                {showDatePicker && (
-                                    <ScrollView
-                                        horizontal
-                                        showsHorizontalScrollIndicator={false}
-                                        contentContainerStyle={styles.calendarScrollContainer}
-                                        style={styles.calendarScroll}
-                                    >
-                                        {Array.from({ length: 7 }, (_, idx) => {
-                                            const date = new Date();
-                                            date.setDate(date.getDate() - idx);
-                                            const dateStr = date.toISOString().split('T')[0];
-                                            const isSelected = spendingDate === dateStr;
-                                            const dayName = idx === 0 ? 'Today' : idx === 1 ? 'Yesterday' : date.toLocaleDateString('en-IN', { weekday: 'short' });
-                                            const dayNum = date.getDate();
-                                            const monthName = date.toLocaleDateString('en-IN', { month: 'short' });
-                                            return (
-                                                <TouchableOpacity
-                                                    key={dateStr}
-                                                    style={[styles.calendarDay, isSelected && styles.calendarDaySelected]}
-                                                    onPress={() => {
-                                                        setSpendingDate(dateStr);
-                                                        setShowDatePicker(false);
-                                                    }}
-                                                >
-                                                    <Text style={[styles.calendarDayName, isSelected && styles.calendarDayNameSelected]}>
-                                                        {dayName}
-                                                    </Text>
-                                                    <Text style={[styles.calendarDayNum, isSelected && styles.calendarDayNumSelected]}>
-                                                        {dayNum}
-                                                    </Text>
-                                                    <Text style={[styles.calendarMonth, isSelected && styles.calendarMonthSelected]}>
-                                                        {monthName}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            );
-                                        })}
-                                    </ScrollView>
-                                )}
                             </View>
 
                             {/* Ledger & Subledger Section - Scrollable */}
@@ -1009,13 +688,98 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                                 styles.dropdownButtonText,
                                                 !selectedSubLedger && styles.placeholderText
                                             ]} numberOfLines={1}>
-                                                {selectedSubLedger || 'Select Name'}
+                                                {selectedSubLedger === othersSubLedgerValue
+                                                    ? 'Others'
+                                                    : (selectedSubLedger || 'Select Name')}
                                             </Text>
                                             <MaterialCommunityIcons name="chevron-down" size={20} color={selectedLedgerId ? theme.colors.textSecondary : theme.colors.border} />
                                         </TouchableOpacity>
                                     </View>
                                 </View>
                             </View>
+
+                            {shouldShowCategorySelection && (
+                                <>
+                                    <Text style={styles.fieldLabel}>🏷️ Category</Text>
+                                    <View style={styles.categoryRow}>
+                                        {categories.map(cat => (
+                                            <TouchableOpacity
+                                                key={cat.id}
+                                                style={[
+                                                    styles.categoryChip,
+                                                    spendingCategory === cat.id && { backgroundColor: cat.color, borderColor: cat.color }
+                                                ]}
+                                                onPress={() => selectSpendingCategory(cat.id)}
+                                            >
+                                                <MaterialCommunityIcons
+                                                    name={cat.icon}
+                                                    size={22}
+                                                    color={spendingCategory === cat.id ? 'white' : cat.color}
+                                                />
+                                                <Text style={[
+                                                    styles.categoryChipText,
+                                                    spendingCategory === cat.id && styles.categoryChipTextActive
+                                                ]}>
+                                                    {cat.id}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+
+                                    {spendingCategory === 'Service' && (
+                                        <View style={styles.categorySpecificSection}>
+                                            <View style={styles.categorySpecificHeader}>
+                                                <MaterialCommunityIcons name="account-hard-hat" size={18} color="#6366F1" />
+                                                <Text style={styles.categorySpecificTitle}>Service Details</Text>
+                                            </View>
+
+                                            <View style={styles.inputRow}>
+                                                <View style={styles.inputHalf}>
+                                                    <Text style={styles.subFieldLabel}>👤 Paid To (Person)</Text>
+                                                    <TextInput
+                                                        style={styles.subFieldInput}
+                                                        value={paidToPerson}
+                                                        onChangeText={setPaidToPerson}
+                                                        placeholder="e.g., John Contractor"
+                                                        placeholderTextColor={theme.colors.textTertiary}
+                                                    />
+                                                </View>
+                                                <View style={styles.inputHalf}>
+                                                    <Text style={styles.subFieldLabel}>📍 Place</Text>
+                                                    <TextInput
+                                                        style={styles.subFieldInput}
+                                                        value={paidToPlace}
+                                                        onChangeText={setPaidToPlace}
+                                                        placeholder="e.g., Site Office"
+                                                        placeholderTextColor={theme.colors.textTertiary}
+                                                    />
+                                                </View>
+                                            </View>
+                                        </View>
+                                    )}
+
+                                    {spendingCategory === 'Product' && (
+                                        <View style={styles.categorySpecificSection}>
+                                            <View style={styles.categorySpecificHeader}>
+                                                <MaterialCommunityIcons name="package-variant" size={18} color="#10B981" />
+                                                <Text style={[styles.categorySpecificTitle, { color: '#059669' }]}>Product Details</Text>
+                                            </View>
+
+                                            <Text style={styles.subFieldLabel}>📦 Product Name / Category</Text>
+                                            <TextInput
+                                                style={styles.productNameInput}
+                                                value={materialType}
+                                                onChangeText={setMaterialType}
+                                                placeholder="e.g., Cement, Steel Rods, Paint..."
+                                                placeholderTextColor={theme.colors.textTertiary}
+                                                returnKeyType="done"
+                                                onSubmitEditing={Keyboard.dismiss}
+                                                blurOnSubmit={true}
+                                            />
+                                        </View>
+                                    )}
+                                </>
+                            )}
 
                             {/* Amount Input - Ledger Style */}
                             <View style={styles.amountSection}>
@@ -1084,133 +848,50 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                         style={styles.funderList}
                                         contentContainerStyle={{ paddingRight: 20 }}
                                     >
-                                        {projectMembers.filter(m => m.id !== currentUser.id).map(member => {
-                                            const uName = userAccounts[member.id]?.name || member.name;
-                                            return (
-                                                <TouchableOpacity
-                                                    key={member.id}
-                                                    style={[styles.funderChip, selectedFunder === member.id && styles.funderChipActive]}
-                                                    onPress={() => setSelectedFunder(member.id)}
-                                                >
-                                                    <View style={styles.funderAvatarSmall}>
-                                                        <Text style={styles.funderAvatarText}>{uName.charAt(0)}</Text>
-                                                    </View>
-                                                    <Text style={[styles.funderText, selectedFunder === member.id && styles.funderTextActive]}>
-                                                        {uName.split(' ')[0]}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            );
-                                        })}
+                                        {projectMembers
+                                            .filter((member) => String(member?.id || '') !== currentUserId)
+                                            .map(member => {
+                                                const uName = getUserName(member.id, member.name || 'Unknown');
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={member.id}
+                                                        style={[styles.funderChip, selectedFunder === member.id && styles.funderChipActive]}
+                                                        onPress={() => setSelectedFunder(member.id)}
+                                                    >
+                                                        <View style={styles.funderAvatarSmall}>
+                                                            <Text style={styles.funderAvatarText}>{uName.charAt(0)}</Text>
+                                                        </View>
+                                                        <Text style={[styles.funderText, selectedFunder === member.id && styles.funderTextActive]}>
+                                                            {uName.split(' ')[0]}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
                                     </ScrollView>
                                 </View>
                             )}
 
-                            {/* Category Selection */}
-                            <Text style={styles.fieldLabel}>🏷️ Category</Text>
-                            <View style={styles.categoryRow}>
-                                {categories.map(cat => (
-                                    <TouchableOpacity
-                                        key={cat.id}
-                                        style={[
-                                            styles.categoryChip,
-                                            spendingCategory === cat.id && { backgroundColor: cat.color, borderColor: cat.color }
-                                        ]}
-                                        onPress={() => {
-                                            setSpendingCategory(cat.id);
-                                            // Reset category-specific fields when switching
-                                            if (cat.id === 'Service') {
-                                                setMaterialType('');
-                                            } else {
-                                                setPaidToPerson('');
-                                                setPaidToPlace('');
-                                            }
-                                        }}
-                                    >
-                                        <MaterialCommunityIcons
-                                            name={cat.icon}
-                                            size={22}
-                                            color={spendingCategory === cat.id ? 'white' : cat.color}
-                                        />
-                                        <Text style={[
-                                            styles.categoryChipText,
-                                            spendingCategory === cat.id && styles.categoryChipTextActive
-                                        ]}>
-                                            {cat.id}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-
-                            {/* ========== SERVICE SPECIFIC FIELDS ========== */}
-                            {spendingCategory === 'Service' && (
-                                <View style={styles.categorySpecificSection}>
-                                    <View style={styles.categorySpecificHeader}>
-                                        <MaterialCommunityIcons name="account-hard-hat" size={18} color="#6366F1" />
-                                        <Text style={styles.categorySpecificTitle}>Service Details</Text>
-                                    </View>
-
-                                    {/* Paid To Person */}
-                                    <View style={styles.inputRow}>
-                                        <View style={styles.inputHalf}>
-                                            <Text style={styles.subFieldLabel}>👤 Paid To (Person)</Text>
-                                            <TextInput
-                                                style={styles.subFieldInput}
-                                                value={paidToPerson}
-                                                onChangeText={setPaidToPerson}
-                                                placeholder="e.g., John Contractor"
-                                                placeholderTextColor={theme.colors.textTertiary}
-                                            />
-                                        </View>
-                                        <View style={styles.inputHalf}>
-                                            <Text style={styles.subFieldLabel}>📍 Place</Text>
-                                            <TextInput
-                                                style={styles.subFieldInput}
-                                                value={paidToPlace}
-                                                onChangeText={setPaidToPlace}
-                                                placeholder="e.g., Site Office"
-                                                placeholderTextColor={theme.colors.textTertiary}
-                                            />
-                                        </View>
-                                    </View>
-                                </View>
-                            )}
-
-                            {/* ========== PRODUCT SPECIFIC FIELDS ========== */}
-                            {spendingCategory === 'Product' && (
-                                <View style={styles.categorySpecificSection}>
-                                    <View style={styles.categorySpecificHeader}>
-                                        <MaterialCommunityIcons name="package-variant" size={18} color="#10B981" />
-                                        <Text style={[styles.categorySpecificTitle, { color: '#059669' }]}>Product Details</Text>
-                                    </View>
-
-                                    {/* Product Name/Type Input */}
-                                    <Text style={styles.subFieldLabel}>📦 Product Name / Category</Text>
-                                    <TextInput
-                                        style={styles.productNameInput}
-                                        value={materialType}
-                                        onChangeText={setMaterialType}
-                                        placeholder="e.g., Cement, Steel Rods, Paint..."
-                                        placeholderTextColor={theme.colors.textTertiary}
-                                        returnKeyType="done"
-                                        onSubmitEditing={Keyboard.dismiss}
-                                        blurOnSubmit={true}
-                                    />
-                                </View>
-                            )}
-
                             {/* Add Button */}
-                            <TouchableOpacity style={styles.addSpendingBtn} onPress={handleAddSpending}>
-                                <LinearGradient colors={['#10B981', '#059669']} style={styles.addSpendingGradient}>
-                                    <MaterialCommunityIcons name="plus" size={20} color="white" />
+                            <TouchableOpacity
+                                style={[styles.addSpendingBtn, isSubmitting && styles.disabledButton]}
+                                onPress={handleAddSpending}
+                                disabled={isSubmitting}
+                            >
+                                <LinearGradient colors={isSubmitting ? ['#9CA3AF', '#6B7280'] : ['#10B981', '#059669']} style={styles.addSpendingGradient}>
+                                    {isSubmitting ? (
+                                        <ActivityIndicator size="small" color="white" />
+                                    ) : (
+                                        <MaterialCommunityIcons name="plus" size={20} color="white" />
+                                    )}
                                     <Text style={styles.addSpendingText}>
-                                        {projectMemberIds.length > 1 ? 'Submit for Approval' : 'Add Spending'}
+                                        {getSpendingButtonLabel(isSubmitting, projectMemberIds.length)}
                                     </Text>
                                 </LinearGradient>
                             </TouchableOpacity>
 
-                            {projectMemberIds.length > 1 && (
+                            {effectiveApproverIds.length > 1 && (
                                 <Text style={styles.approvalNote}>
-                                    * Requires approval from all {projectMemberIds.length} members
+                                    * Requires approval from all {effectiveApproverIds.length} active members
                                 </Text>
                             )}
                         </View>
@@ -1250,9 +931,10 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                 {/* Calculate contributions per member */}
                                 {projectMembers
                                     .map(member => {
-                                        const memberUser = userAccounts[member.id] || member;
+                                        const memberId = String(member.id);
+                                        const memberUser = getMemberUser(member);
                                         const memberSpendings = [...approvedSpendings, ...pendingSpendings]
-                                            .filter(s => s.addedBy === member.id);
+                                            .filter(s => getSpendingTrackedAccountId(s) === memberId);
                                         const totalContribution = memberSpendings.reduce((sum, s) => sum + s.amount, 0);
                                         return {
                                             member,
@@ -1265,8 +947,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                     .map((item, index) => {
                                         const isTop3 = index < 3;
                                         const rankColors = ['#F59E0B', '#9CA3AF', '#CD7F32'];
-                                        const rankIcons = ['medal', 'medal-outline', 'medal-outline'];
-                                        const isCurrentUser = item.member.id === currentUser.id;
+                                        const isCurrentUser = String(item.member?.id || '') === currentUserId;
 
                                         return (
                                             <View
@@ -1297,19 +978,21 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                                     <Text style={styles.contributorMeta}>
                                                         {(() => {
                                                             // Logic: If member has spent money, check if it was mostly self-funded or funded by others
-                                                            const memberTxns = [...approvedSpendings, ...pendingSpendings].filter(s => s.addedBy === item.member.id);
+                                                            const memberId = String(item.member.id);
+                                                            const memberTxns = [...approvedSpendings, ...pendingSpendings]
+                                                                .filter(s => getSpendingTrackedAccountId(s) === memberId);
                                                             if (memberTxns.length === 0) return 'No contributions';
 
                                                             // Count occurrences of funders
                                                             const fundingStats = {};
                                                             memberTxns.forEach(s => {
-                                                                const funder = s.fundedBy || s.addedBy;
+                                                                const funder = getSpendingFunderId(s);
                                                                 fundingStats[funder] = (fundingStats[funder] || 0) + 1;
                                                             });
 
                                                             // Find dominant funder
                                                             let maxCount = 0;
-                                                            let dominantFunder = item.member.id;
+                                                            let dominantFunder = memberId;
                                                             Object.keys(fundingStats).forEach(fId => {
                                                                 if (fundingStats[fId] > maxCount) {
                                                                     maxCount = fundingStats[fId];
@@ -1317,8 +1000,8 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                                                 }
                                                             });
 
-                                                            if (dominantFunder === item.member.id) return 'Self Funded';
-                                                            return `Funded by ${userAccounts[dominantFunder]?.name || 'Unknown'}`;
+                                                            if (dominantFunder === memberId) return 'Self Funded';
+                                                            return `Funded by ${getUserName(dominantFunder, 'Unknown')}`;
                                                         })()}
                                                     </Text>
                                                 </View>
@@ -1354,10 +1037,10 @@ export default function ProjectDetailScreen({ navigation, route }) {
                         <View style={styles.sectionHeaderRow}>
                             <View style={styles.sectionHeaderLeft}>
                                 <Text style={styles.sectionTitle}>Recent Spendings</Text>
-                                <Text style={styles.sectionSubtitle}>Approved transactions</Text>
+                                <Text style={styles.sectionSubtitle}>All transactions</Text>
                             </View>
                             <View style={styles.totalBadge}>
-                                <Text style={styles.totalBadgeText}>₹{totalApprovedSpent.toLocaleString()}</Text>
+                                <Text style={styles.totalBadgeText}>₹{(totalApprovedSpent + totalPendingSpent).toLocaleString()}</Text>
                             </View>
                         </View>
 
@@ -1371,19 +1054,19 @@ export default function ProjectDetailScreen({ navigation, route }) {
                             >
                                 <TouchableOpacity
                                     style={[styles.filterChip, spendingFilter === 'all' && styles.filterChipActive]}
-                                    onPress={() => setSpendingFilter('all')}
+                                    onPress={() => handleSpendingFilterChange('all')}
                                 >
                                     <Text style={[styles.filterChipText, spendingFilter === 'all' && styles.filterChipTextActive]}>All</Text>
                                 </TouchableOpacity>
                                 {projectMembers.slice(0, 5).map(member => {
-                                    const memberUser = userAccounts[member.id] || member;
+                                    const memberUser = getMemberUser(member);
                                     const isActive = spendingFilter === member.id;
                                     const firstName = memberUser.name?.split(' ')[0] || 'User';
                                     return (
                                         <TouchableOpacity
                                             key={member.id}
                                             style={[styles.filterChip, isActive && styles.filterChipActive]}
-                                            onPress={() => setSpendingFilter(member.id)}
+                                            onPress={() => handleSpendingFilterChange(member.id)}
                                         >
                                             <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
                                                 {firstName.length > 8 ? firstName.substring(0, 8) + '...' : firstName}
@@ -1395,22 +1078,53 @@ export default function ProjectDetailScreen({ navigation, route }) {
                         </View>
 
                         {/* Filtered Spending List */}
-                        {(() => {
-                            const filteredSpendings = spendingFilter === 'all'
-                                ? approvedSpendings
-                                : approvedSpendings.filter(s => s.addedBy === spendingFilter);
+                        {filteredRecentSpendings.length > 0 ? (
+                            <>
+                                {recentSpendingsPreview.map((spending) => (
+                                    <View key={spending.id}>
+                                        {spending.status === 'pending' && (
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 6 }}>
+                                                <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                                    <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '600' }}>PENDING</Text>
+                                                </View>
+                                            </View>
+                                        )}
+                                        {renderSpendingItemRow({
+                                            spending,
+                                            ledgers,
+                                            onOpenDetail: setShowSpendingDetail,
+                                            onOpenNote: handleOpenNote,
+                                            getUserName,
+                                            theme,
+                                        })}
+                                    </View>
+                                ))}
 
-                            return filteredSpendings.length > 0 ? (
-                                filteredSpendings.slice(0, 5).map(renderSpendingItem)
-                            ) : (
-                                <View style={styles.emptyState}>
-                                    <MaterialCommunityIcons name="cash-remove" size={48} color={theme.colors.textTertiary} />
-                                    <Text style={styles.emptyText}>
-                                        {spendingFilter === 'all' ? 'No approved spendings yet' : 'No spendings from this member'}
-                                    </Text>
-                                </View>
-                            );
-                        })()}
+                                {hasMoreRecentSpendings && (
+                                    <TouchableOpacity
+                                        style={styles.viewMoreButton}
+                                        onPress={() => setShowAllRecentSpendings(true)}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text style={styles.viewMoreButtonText}>
+                                            View More ({filteredRecentSpendings.length} total)
+                                        </Text>
+                                        <MaterialCommunityIcons
+                                            name="open-in-new"
+                                            size={18}
+                                            color={theme.colors.primary}
+                                        />
+                                    </TouchableOpacity>
+                                )}
+                            </>
+                        ) : (
+                            <View style={styles.emptyState}>
+                                <MaterialCommunityIcons name="cash-remove" size={48} color={theme.colors.textTertiary} />
+                                <Text style={styles.emptyText}>
+                                    {spendingFilter === 'all' ? 'No spendings yet' : 'No spendings from this member'}
+                                </Text>
+                            </View>
+                        )}
                     </View>
 
                     {/* =================== PROJECT MEMBERS =================== */}
@@ -1437,10 +1151,11 @@ export default function ProjectDetailScreen({ navigation, route }) {
                             contentContainerStyle={styles.membersScrollContent}
                         >
                             {projectMembers.map(member => {
-                                const memberIsCreator = member.id === project.createdBy;
-                                const isSelf = member.id === currentUser.id;
-                                const memberUser = userAccounts[member.id] || member;
-                                const memIsAdmin = projectAdminIds.includes(member.id);
+                                const creatorId = project?.createdBy?._id || project?.createdBy;
+                                const memberIsCreator = String(member.id) === String(creatorId);
+                                const isSelf = String(member.id) === String(currentUser?.id || currentUser?._id);
+                                const memberUser = getMemberUser(member);
+                                const memberGradient = getMemberAvatarGradient(memberIsCreator, isSelf, theme.gradients);
                                 return (
                                     <TouchableOpacity
                                         key={member.id}
@@ -1449,7 +1164,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                                     >
                                         <View style={styles.avatarWrapper}>
                                             <LinearGradient
-                                                colors={memberIsCreator ? ['#F59E0B', '#D97706'] : isSelf ? ['#10B981', '#059669'] : theme.gradients.primary}
+                                                colors={memberGradient}
                                                 style={styles.memberAvatarCircle}
                                             >
                                                 <Text style={styles.memberInitials}>
@@ -1475,649 +1190,321 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 </ScrollView>
             </KeyboardAvoidingView>
 
-            {/* =================== PENDING APPROVALS MODAL =================== */}
-            <Modal
-                visible={showPendingApprovals}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={() => setShowPendingApprovals(false)}
-            >
-                <View style={styles.modalOverlay} pointerEvents="box-none">
-                    <TouchableOpacity
-                        style={StyleSheet.absoluteFill}
-                        onPress={() => setShowPendingApprovals(false)}
-                        activeOpacity={1}
-                    >
-                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
-                    </TouchableOpacity>
+            {currentUser && (
+                <PendingApprovalsModal
+                    visible={showPendingApprovals}
+                    onClose={() => setShowPendingApprovals(false)}
+                    pendingSpendings={pendingSpendings}
+                    rejectedSpendings={rejectedSpendings}
+                    currentUser={currentUser}
+                    project={project}
+                    projectMemberIds={projectMemberIds}
+                    onApprove={handleApproveSpending}
+                    onReject={handleRejectSpending}
+                    actionFeedback={actionFeedback}
+                    isPassiveViewer={isPassiveViewer}
+                    userAccounts={userAccounts}
+                />
+            )}
 
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Pending Approvals</Text>
-                            <TouchableOpacity onPress={() => setShowPendingApprovals(false)}>
-                                <MaterialCommunityIcons name="close" size={24} color={theme.colors.textPrimary} />
-                            </TouchableOpacity>
+            <SpendingDetailModal
+                visible={showSpendingDetail !== null}
+                spending={showSpendingDetail}
+                onClose={() => setShowSpendingDetail(null)}
+                userAccounts={userAccounts}
+                ledgers={ledgers}
+            />
+
+            <AddMemberModal
+                visible={showAddMemberModal}
+                onClose={() => setShowAddMemberModal(false)}
+                availableMembers={availableMembers}
+                onAddMember={handleAddMember}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+            />
+
+            <MemberOptionsModal
+                visible={showMemberOptions !== null}
+                member={showMemberOptions}
+                onClose={() => setShowMemberOptions(null)}
+                onToggleStatus={handleToggleMemberStatus}
+                onRemove={handleRemoveMember}
+                project={project}
+            />
+
+            <NoteModal
+                visible={showNoteModal}
+                onClose={() => setShowNoteModal(false)}
+                noteContent={noteContent}
+                setNoteContent={setNoteContent}
+                onSave={handleSaveNote}
+            />
+
+            <Modal
+                visible={showExportFormatModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowExportFormatModal(false)}
+            >
+                <View style={styles.exportFormatModalOverlay}>
+                    <TouchableOpacity
+                        style={styles.exportFormatModalBackdrop}
+                        activeOpacity={1}
+                        onPress={() => setShowExportFormatModal(false)}
+                    />
+
+                    <View style={styles.exportFormatModalCard}>
+                        <View style={styles.exportFormatHandle} />
+
+                        <View style={styles.exportFormatHeader}>
+                            <LinearGradient
+                                colors={['#6366F1', '#8B5CF6']}
+                                style={styles.exportFormatIconWrap}
+                            >
+                                <MaterialCommunityIcons name="download-circle" size={24} color="white" />
+                            </LinearGradient>
+                            <View style={styles.exportFormatHeaderTextWrap}>
+                                <Text style={styles.exportFormatTitle}>Export Project Details</Text>
+                                <Text style={styles.exportFormatSubtitle}>
+                                    Choose a professional report format for this project
+                                </Text>
+                            </View>
                         </View>
 
-                        {/* Instant Feedback Banner */}
-                        {actionFeedback && (
-                            <View style={[
-                                styles.feedbackBanner,
-                                actionFeedback.type === 'approve' && styles.feedbackApprove,
-                                actionFeedback.type === 'reject' && styles.feedbackReject,
-                                actionFeedback.type === 'success' && styles.feedbackSuccess,
-                            ]}>
-                                <MaterialCommunityIcons
-                                    name={actionFeedback.type === 'reject' ? 'close-circle' : 'check-circle'}
-                                    size={20}
-                                    color="white"
-                                />
-                                <Text style={styles.feedbackText}>{actionFeedback.message}</Text>
-                            </View>
-                        )}
-
-                        <ScrollView
-                            style={{ paddingHorizontal: 16 }}
-                            contentContainerStyle={{ paddingBottom: 30, paddingTop: 10 }}
-                            showsVerticalScrollIndicator={true}
+                        <TouchableOpacity
+                            style={styles.exportFormatOption}
+                            onPress={() => handleSelectExportFormat('xlsx')}
+                            disabled={exportingProject}
                         >
-                            {/* Pending Section */}
-                            {pendingSpendings.length > 0 && (
-                                <View style={styles.modalSectionHeader}>
-                                    <MaterialCommunityIcons name="clock-outline" size={18} color="#F59E0B" />
-                                    <Text style={styles.modalSectionTitle}>Awaiting Approval ({pendingSpendings.length})</Text>
-                                </View>
-                            )}
-                            {pendingSpendings.map(renderPendingSpendingItem)}
+                            <View style={[styles.exportFormatOptionIcon, { backgroundColor: '#DBEAFE' }]}>
+                                <MaterialCommunityIcons name="file-excel" size={22} color="#2563EB" />
+                            </View>
+                            <View style={styles.exportFormatOptionTextWrap}>
+                                <Text style={styles.exportFormatOptionTitle}>Excel Workbook (.xlsx)</Text>
+                                <Text style={styles.exportFormatOptionDesc}>
+                                    Best for professional review with styled sheets and analytics
+                                </Text>
+                            </View>
+                            <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textTertiary} />
+                        </TouchableOpacity>
 
-                            {/* Rejected Section */}
-                            {rejectedSpendings.length > 0 && (
-                                <>
-                                    <View style={[styles.modalSectionHeader, { marginTop: 24 }]}>
-                                        <MaterialCommunityIcons name="close-circle-outline" size={18} color="#EF4444" />
-                                        <Text style={[styles.modalSectionTitle, { color: '#EF4444' }]}>Rejected ({rejectedSpendings.length})</Text>
-                                    </View>
-                                    {rejectedSpendings.map(renderRejectedSpendingItem)}
-                                </>
-                            )}
+                        <TouchableOpacity
+                            style={styles.exportFormatOption}
+                            onPress={() => handleSelectExportFormat('csv')}
+                            disabled={exportingProject}
+                        >
+                            <View style={[styles.exportFormatOptionIcon, { backgroundColor: '#DCFCE7' }]}>
+                                <MaterialCommunityIcons name="file-delimited-outline" size={22} color="#16A34A" />
+                            </View>
+                            <View style={styles.exportFormatOptionTextWrap}>
+                                <Text style={styles.exportFormatOptionTitle}>CSV Spreadsheet (.csv)</Text>
+                                <Text style={styles.exportFormatOptionDesc}>
+                                    Best for data analysis, BI tools, and quick tabular processing
+                                </Text>
+                            </View>
+                            <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textTertiary} />
+                        </TouchableOpacity>
 
-                            {pendingSpendings.length === 0 && rejectedSpendings.length === 0 && (
-                                <View style={styles.emptyState}>
-                                    <MaterialCommunityIcons name="check-circle" size={48} color="#10B981" />
-                                    <Text style={styles.emptyText}>All caught up!</Text>
-                                    <Text style={styles.emptySubText}>No pending or rejected spendings</Text>
-                                </View>
-                            )}
-                        </ScrollView>
+                        <TouchableOpacity
+                            style={styles.exportFormatCancelBtn}
+                            onPress={() => setShowExportFormatModal(false)}
+                            disabled={exportingProject}
+                        >
+                            <Text style={styles.exportFormatCancelText}>Cancel</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
 
-            {/* =================== SPENDING DETAIL MODAL =================== */}
             <Modal
-                visible={showSpendingDetail !== null}
+                visible={showAllRecentSpendings}
                 animationType="slide"
-                transparent={true}
-                onRequestClose={() => setShowSpendingDetail(null)}
+                transparent={false}
+                onRequestClose={() => setShowAllRecentSpendings(false)}
             >
-                <TouchableWithoutFeedback onPress={() => setShowSpendingDetail(null)}>
-                    <View style={styles.modalOverlay}>
-                        <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                            <View style={styles.modalContent}>
-                                <View style={styles.modalHeader}>
-                                    <Text style={styles.modalTitle}>Spending Details</Text>
-                                    <TouchableOpacity onPress={() => setShowSpendingDetail(null)}>
-                                        <MaterialCommunityIcons name="close" size={24} color={theme.colors.textPrimary} />
-                                    </TouchableOpacity>
-                                </View>
-                                {showSpendingDetail && (
-                                    <ScrollView style={styles.modalList}>
-                                        <View style={styles.detailCard}>
-                                            <View style={styles.detailAmountRow}>
-                                                <Text style={styles.detailAmount}>₹{showSpendingDetail.amount?.toLocaleString()}</Text>
-                                                <View style={[styles.detailCategoryBadge, { backgroundColor: showSpendingDetail.category === 'Service' ? '#EEF2FF' : '#D1FAE5' }]}>
-                                                    <MaterialCommunityIcons
-                                                        name={showSpendingDetail.category === 'Service' ? 'account-hard-hat' : 'package-variant'}
-                                                        size={16}
-                                                        color={showSpendingDetail.category === 'Service' ? '#6366F1' : '#10B981'}
-                                                    />
-                                                    <Text style={[styles.detailCategoryText, { color: showSpendingDetail.category === 'Service' ? '#6366F1' : '#10B981' }]}>
-                                                        {showSpendingDetail.category}
-                                                    </Text>
-                                                </View>
-                                            </View>
-
-                                            <Text style={styles.detailDescription}>{showSpendingDetail.description}</Text>
-
-                                            <View style={styles.detailInfoRows}>
-                                                <View style={styles.detailInfoRow}>
-                                                    <MaterialCommunityIcons name="calendar" size={18} color={theme.colors.textSecondary} />
-                                                    <Text style={styles.detailInfoText}>{showSpendingDetail.date}</Text>
-                                                </View>
-                                                <View style={styles.detailInfoRow}>
-                                                    <MaterialCommunityIcons name="clock-outline" size={18} color={theme.colors.textSecondary} />
-                                                    <Text style={styles.detailInfoText}>
-                                                        {(() => {
-                                                            const rawTime = showSpendingDetail.time;
-                                                            if (!rawTime) return '—';
-                                                            const t = String(rawTime).trim();
-
-                                                            // If already has am/pm
-                                                            if (/am|pm/i.test(t)) return t;
-
-                                                            // Try parsing HH:mm or H:mm
-                                                            const parts = t.split(':');
-                                                            if (parts.length >= 2) {
-                                                                let h = parseInt(parts[0], 10);
-                                                                const m = parts[1];
-                                                                if (!isNaN(h)) {
-                                                                    const ampm = h >= 12 ? 'PM' : 'AM';
-                                                                    h = h % 12;
-                                                                    h = h === 0 ? 12 : h;
-                                                                    return `${h}:${m} ${ampm}`;
-                                                                }
-                                                            }
-                                                            return t;
-                                                        })()}
-                                                    </Text>
-                                                </View>
-                                                <View style={styles.detailInfoRow}>
-                                                    <MaterialCommunityIcons name="account" size={18} color={theme.colors.textSecondary} />
-                                                    <Text style={styles.detailInfoText}>
-                                                        Added by {userAccounts[showSpendingDetail.addedBy]?.name || 'Unknown'}
-                                                    </Text>
-                                                </View>
-
-                                                {/* Funded By Row */}
-                                                <View style={styles.detailInfoRow}>
-                                                    <MaterialCommunityIcons name="wallet-outline" size={18} color={theme.colors.textSecondary} />
-                                                    <Text style={styles.detailInfoText}>
-                                                        Funded By: <Text style={{ fontWeight: '600', color: theme.colors.textPrimary }}>
-                                                            {(() => {
-                                                                if (!showSpendingDetail.fundedBy || showSpendingDetail.fundedBy === showSpendingDetail.addedBy) {
-                                                                    return userAccounts[showSpendingDetail.addedBy]?.name || 'Self Funded';
-                                                                }
-                                                                return userAccounts[showSpendingDetail.fundedBy]?.name || 'Unknown';
-                                                            })()}
-                                                        </Text>
-                                                        {showSpendingDetail.subLedger ? ` • ${showSpendingDetail.subLedger}` : ''}
-                                                    </Text>
-                                                </View>
-                                            </View>
-                                        </View>
-
-                                        {/* Approvals List */}
-                                        {showSpendingDetail.approvals && Object.keys(showSpendingDetail.approvals).length > 0 && (
-                                            <View style={styles.approvalsSection}>
-                                                <Text style={styles.approvalsSectionTitle}>Approvals</Text>
-                                                {Object.entries(showSpendingDetail.approvals).map(([userId, approval]) => (
-                                                    <View key={userId} style={styles.approvalRow}>
-                                                        <View style={styles.approvalUserBadge}>
-                                                            <Text style={styles.approvalUserInitial}>
-                                                                {(userAccounts[userId]?.name || 'U').charAt(0)}
-                                                            </Text>
-                                                        </View>
-                                                        <Text style={styles.approvalUserName}>
-                                                            {userAccounts[userId]?.name || 'Unknown'}
-                                                        </Text>
-                                                        <View style={styles.approvalStatusBadge}>
-                                                            <MaterialCommunityIcons name="check" size={14} color="#10B981" />
-                                                            <Text style={styles.approvalStatusText}>Approved</Text>
-                                                        </View>
-                                                    </View>
-                                                ))}
-                                            </View>
-                                        )}
-                                    </ScrollView>
-                                )}
-                            </View>
-                        </TouchableWithoutFeedback>
+                <SafeAreaView style={styles.fullListContainer}>
+                    <View style={styles.fullListHeader}>
+                        <TouchableOpacity
+                            onPress={() => setShowAllRecentSpendings(false)}
+                            style={styles.fullListBackButton}
+                        >
+                            <MaterialCommunityIcons name="arrow-left" size={24} color={theme.colors.textPrimary} />
+                        </TouchableOpacity>
+                        <View style={styles.fullListHeaderTextWrap}>
+                            <Text style={styles.fullListTitle}>Recent Spendings</Text>
+                            <Text style={styles.fullListSubtitle}>{filteredRecentSpendings.length} transactions</Text>
+                        </View>
                     </View>
-                </TouchableWithoutFeedback>
+
+                    <ScrollView
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.fullListScrollContent}
+                    >
+                        {filteredRecentSpendings.map((spending) => (
+                            <View key={`${spending.id}-full-list`}>
+                                {spending.status === 'pending' && (
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 6 }}>
+                                        <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                                            <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '600' }}>PENDING</Text>
+                                        </View>
+                                    </View>
+                                )}
+                                {renderSpendingItemRow({
+                                    spending,
+                                    ledgers,
+                                    onOpenDetail: setShowSpendingDetail,
+                                    onOpenNote: handleOpenNote,
+                                    getUserName,
+                                    theme,
+                                })}
+                            </View>
+                        ))}
+                    </ScrollView>
+                </SafeAreaView>
             </Modal>
 
-            {/* =================== ADD MEMBER MODAL =================== */}
             <Modal
-                visible={showAddMemberModal}
-                animationType="slide"
-                transparent={true}
-                onRequestClose={() => setShowAddMemberModal(false)}
-            >
-                <TouchableWithoutFeedback onPress={() => setShowAddMemberModal(false)}>
-                    <KeyboardAvoidingView
-                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                        style={styles.modalOverlay}
-                    >
-                        <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                            <View style={styles.modalContent}>
-                                <View style={styles.modalHeader}>
-                                    <Text style={styles.modalTitle}>Add Member</Text>
-                                    <TouchableOpacity onPress={() => setShowAddMemberModal(false)}>
-                                        <MaterialCommunityIcons name="close" size={24} color={theme.colors.textPrimary} />
-                                    </TouchableOpacity>
-                                </View>
-
-                                <View style={styles.searchContainer}>
-                                    <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textTertiary} />
-                                    <TextInput
-                                        style={styles.searchInput}
-                                        placeholder="Search members..."
-                                        placeholderTextColor={theme.colors.textTertiary}
-                                        value={searchQuery}
-                                        onChangeText={setSearchQuery}
-                                    />
-                                </View>
-
-                                <ScrollView style={styles.modalList}>
-                                    {availableMembers.filter(m =>
-                                        m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                        m.email.toLowerCase().includes(searchQuery.toLowerCase())
-                                    ).map(member => (
-                                        <TouchableOpacity
-                                            key={member.id}
-                                            style={styles.modalMemberCard}
-                                            onPress={() => handleAddMember(member)}
-                                        >
-                                            <View style={styles.modalMemberAvatar}>
-                                                <Text style={styles.modalMemberInitials}>
-                                                    {member.name.split(' ').map(n => n[0]).join('')}
-                                                </Text>
-                                            </View>
-                                            <View style={styles.modalMemberInfo}>
-                                                <Text style={styles.modalMemberName}>{member.name}</Text>
-                                                <Text style={styles.modalMemberEmail}>{member.email}</Text>
-                                            </View>
-                                            <View style={styles.modalAddBtn}>
-                                                <MaterialCommunityIcons name="plus" size={20} color="white" />
-                                            </View>
-                                        </TouchableOpacity>
-                                    ))}
-
-                                    {availableMembers.length === 0 && (
-                                        <View style={styles.emptyState}>
-                                            <MaterialCommunityIcons name="account-check" size={48} color={theme.colors.textTertiary} />
-                                            <Text style={styles.emptyText}>All members are already in the project</Text>
-                                        </View>
-                                    )}
-                                </ScrollView>
-                            </View>
-                        </TouchableWithoutFeedback>
-                    </KeyboardAvoidingView>
-                </TouchableWithoutFeedback>
-            </Modal >
-
-            {/* Member Options Modal */}
-            < Modal
-                visible={showMemberOptions !== null}
+                visible={showDatePicker}
                 animationType="fade"
-                transparent={true}
-                onRequestClose={() => setShowMemberOptions(null)}
+                transparent
+                onRequestClose={() => setShowDatePicker(false)}
             >
-                <TouchableWithoutFeedback onPress={() => setShowMemberOptions(null)}>
-                    <View style={styles.optionsOverlay}>
-                        <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
-                            <View style={styles.optionsContent}>
-                                {showMemberOptions && (
-                                    <>
-                                        <Text style={styles.optionsTitle}>{showMemberOptions.name}</Text>
+                <View style={styles.calendarModalOverlay}>
+                    <TouchableOpacity style={styles.calendarBackdrop} onPress={() => setShowDatePicker(false)} />
+                    <View style={styles.calendarModalCard}>
+                        <View style={styles.calendarModalHeader}>
+                            <Text style={styles.calendarModalTitle}>Select Date</Text>
+                            <TouchableOpacity onPress={() => setShowDatePicker(false)} style={styles.calendarCloseButton}>
+                                <MaterialCommunityIcons name="close" size={20} color={theme.colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
 
-                                        <TouchableOpacity
-                                            style={[styles.optionItem, { borderBottomWidth: 1, borderBottomColor: theme.colors.border }]}
-                                            onPress={() => handleToggleMemberStatus(showMemberOptions)}
-                                        >
-                                            <MaterialCommunityIcons
-                                                name={project.investorRoles?.[showMemberOptions.id] === 'passive' ? "account-check" : "eye-off"}
-                                                size={22}
-                                                color={theme.colors.primary}
-                                            />
-                                            <View>
-                                                <Text style={styles.optionText}>
-                                                    {project.investorRoles?.[showMemberOptions.id] === 'passive' ? 'Make Member Active' : 'Make Member Passive'}
-                                                </Text>
-                                                <Text style={styles.optionSubText}>
-                                                    {project.investorRoles?.[showMemberOptions.id] === 'passive' ? 'Allow adding expenses' : 'Restrict to view only'}
-                                                </Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            style={[styles.optionItem, styles.optionItemDanger]}
-                                            onPress={() => handleRemoveMember(showMemberOptions)}
-                                        >
-                                            <MaterialCommunityIcons name="account-remove" size={22} color={theme.colors.danger} />
-                                            <Text style={[styles.optionText, styles.optionTextDanger]}>Remove from Project</Text>
-                                        </TouchableOpacity>
+                        <View style={styles.calendarMonthNavRow}>
+                            <TouchableOpacity
+                                style={styles.calendarNavButton}
+                                onPress={() => setCalendarViewMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                            >
+                                <MaterialCommunityIcons name="chevron-left" size={20} color={theme.colors.textPrimary} />
+                            </TouchableOpacity>
 
-                                        <TouchableOpacity
-                                            style={styles.optionItemCancel}
-                                            onPress={() => setShowMemberOptions(null)}
-                                        >
-                                            <Text style={styles.optionCancelText}>Cancel</Text>
-                                        </TouchableOpacity>
-                                    </>
-                                )}
-                            </View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal >
+                            <Text style={styles.calendarMonthTitle}>{calendarMonthLabel}</Text>
 
-            {/* Note Input Modal */}
-            < Modal
-                visible={showNoteModal}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={() => setShowNoteModal(false)}
-            >
-                <TouchableWithoutFeedback onPress={() => setShowNoteModal(false)}>
-                    <View style={styles.noteModalOverlay}>
-                        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                            <View style={styles.noteModalContainer}>
-                                <View style={styles.noteModalHeader}>
-                                    <View style={styles.noteModalTitleRow}>
-                                        <View style={styles.noteIconBadge}>
-                                            <MaterialCommunityIcons name="note-text-outline" size={20} color={theme.colors.primary} />
-                                        </View>
-                                        <Text style={styles.noteModalTitle}>Add Note / Receipt</Text>
-                                    </View>
-                                    <TouchableOpacity onPress={() => setShowNoteModal(false)} style={styles.closeNoteBtn}>
-                                        <MaterialCommunityIcons name="close" size={20} color={theme.colors.textSecondary} />
-                                    </TouchableOpacity>
-                                </View>
+                            <TouchableOpacity
+                                style={styles.calendarNavButton}
+                                onPress={() => setCalendarViewMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                            >
+                                <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.textPrimary} />
+                            </TouchableOpacity>
+                        </View>
 
-                                <Text style={styles.noteAlertText}>
-                                    Add extra details, links to receipts, or comments for this transaction.
-                                </Text>
+                        <View style={styles.calendarWeekdayRow}>
+                            {WEEKDAY_LABELS.map((weekday) => (
+                                <Text key={weekday} style={styles.calendarWeekdayText}>{weekday}</Text>
+                            ))}
+                        </View>
 
-                                <View style={styles.noteInputWrapper}>
-                                    <TextInput
-                                        style={styles.noteInput}
-                                        placeholder="E.g., https://drive.google.com/... or 'Bought from Local Store'"
-                                        placeholderTextColor={theme.colors.textTertiary}
-                                        value={noteContent}
-                                        onChangeText={setNoteContent}
-                                        multiline
-                                        numberOfLines={4}
-                                        textAlignVertical="top"
-                                    />
-                                </View>
+                        <View style={styles.calendarGrid}>
+                            {calendarDays.map((cell) => {
+                                if (cell.isEmpty) {
+                                    return <View key={cell.key} style={styles.calendarDayCellEmpty} />;
+                                }
 
-                                <View style={styles.noteModalFooter}>
+                                const isSelected = spendingDate === cell.key;
+                                return (
                                     <TouchableOpacity
-                                        style={styles.modalCancelBtn}
-                                        onPress={() => setShowNoteModal(false)}
+                                        key={cell.key}
+                                        style={[
+                                            styles.calendarDayCell,
+                                            isSelected && styles.calendarDayCellSelected,
+                                            cell.isFuture && styles.calendarDayCellDisabled,
+                                        ]}
+                                        onPress={() => {
+                                            if (cell.isFuture) return;
+                                            setSpendingDate(cell.key);
+                                            setShowDatePicker(false);
+                                        }}
+                                        disabled={cell.isFuture}
                                     >
-                                        <Text style={styles.modalCancelText}>Cancel</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        style={styles.saveNoteBtn}
-                                        onPress={handleSaveNote}
-                                    >
-                                        <LinearGradient
-                                            colors={theme.gradients.primary}
-                                            style={styles.saveNoteGradient}
+                                        <Text
+                                            style={[
+                                                styles.calendarDayCellText,
+                                                isSelected && styles.calendarDayCellTextSelected,
+                                                cell.isFuture && styles.calendarDayCellTextDisabled,
+                                            ]}
                                         >
-                                            <Text style={styles.saveNoteText}>Save Note</Text>
-                                        </LinearGradient>
+                                            {cell.dayNumber}
+                                        </Text>
                                     </TouchableOpacity>
-                                </View>
-                            </View>
-                        </TouchableWithoutFeedback>
+                                );
+                            })}
+                        </View>
+
+                        <View style={styles.calendarModalFooter}>
+                            <TouchableOpacity
+                                style={styles.calendarFooterSecondaryButton}
+                                onPress={() => {
+                                    setSpendingDate(todayDateKey);
+                                    setCalendarViewMonth(new Date());
+                                }}
+                            >
+                                <Text style={styles.calendarFooterSecondaryText}>Today</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.calendarFooterPrimaryButton}
+                                onPress={() => setShowDatePicker(false)}
+                            >
+                                <Text style={styles.calendarFooterPrimaryText}>Done</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </TouchableWithoutFeedback>
-            </Modal >
+                </View>
+            </Modal>
 
             {/* ================= LEDGER SELECTION & MANAGEMENT MODAL ================= */}
-            < Modal
+            <LedgerSelectModal
                 visible={showLedgerSelectModal}
-                animationType="fade"
-                transparent={true}
-                onRequestClose={() => setShowLedgerSelectModal(false)}
-            >
-                <TouchableWithoutFeedback onPress={() => setShowLedgerSelectModal(false)}>
-                    <View style={styles.modalOverlayCenter}>
-                        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                            <View style={styles.modalContainerFancy}>
-                                {/* Header */}
-                                <View style={styles.modalHeaderInfo}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                        <MaterialCommunityIcons name="book-open-page-variant" size={24} color={theme.colors.primary} />
-                                        <Text style={styles.modalTitleFancy}>Select Ledger</Text>
-                                    </View>
-                                    <Text style={styles.modalSubtitleFancy}>Major Account Head</Text>
-                                </View>
-
-                                {/* Controls Row */}
-                                <View style={styles.modalControlsRow}>
-                                    <View style={styles.searchBoxFancy}>
-                                        <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textTertiary} />
-                                        <TextInput
-                                            style={styles.searchInputFancy}
-                                            placeholder="Search ledgers..."
-                                            placeholderTextColor={theme.colors.textTertiary}
-                                            value={searchLedgerQuery}
-                                            onChangeText={setSearchLedgerQuery}
-                                        />
-                                    </View>
-
-                                    {isAdmin && (
-                                        <TouchableOpacity
-                                            style={[styles.manageBtnFancy, editMode && styles.manageBtnActive]}
-                                            onPress={() => setEditMode(!editMode)}
-                                        >
-                                            <MaterialCommunityIcons name={editMode ? "check" : "pencil"} size={20} color={editMode ? "white" : theme.colors.primary} />
-                                            <Text style={[styles.manageBtnText, editMode && { color: 'white' }]}>
-                                                {editMode ? 'Done' : 'Edit'}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-
-                                {/* Add New (Only in Edit Mode) */}
-                                {editMode && (
-                                    <View style={styles.addNewRowFancy}>
-                                        <TextInput
-                                            style={styles.addNewInputFancy}
-                                            placeholder="Ex: Solar Installation"
-                                            placeholderTextColor={theme.colors.textTertiary}
-                                            value={newLedgerName}
-                                            onChangeText={setNewLedgerName}
-                                        />
-                                        <TouchableOpacity
-                                            style={[styles.addBtnFancy, !newLedgerName.trim() && styles.disabledBtn]}
-                                            onPress={handleAddLedger}
-                                            disabled={!newLedgerName.trim()}
-                                        >
-                                            <MaterialCommunityIcons name="plus" size={22} color="white" />
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-
-                                {/* List */}
-                                <ScrollView style={styles.listFancy} showsVerticalScrollIndicator={false}>
-                                    {ledgers.filter(l => l.name.toLowerCase().includes(searchLedgerQuery.toLowerCase())).map(l => (
-                                        <TouchableOpacity
-                                            key={l.id}
-                                            style={[
-                                                styles.listItemFancy,
-                                                selectedLedgerId === l.id && !editMode && styles.listItemSelected
-                                            ]}
-                                            onPress={() => {
-                                                if (!editMode) {
-                                                    setSelectedLedgerId(l.id);
-                                                    setSelectedSubLedger('');
-                                                    setShowLedgerSelectModal(false);
-                                                }
-                                            }}
-                                            activeOpacity={0.7}
-                                            disabled={editMode}
-                                        >
-                                            <View style={[styles.iconBoxFancy, selectedLedgerId === l.id && !editMode && { backgroundColor: theme.colors.primary }]}>
-                                                <MaterialCommunityIcons name="book-variant" size={20} color={selectedLedgerId === l.id && !editMode ? "white" : theme.colors.primary} />
-                                            </View>
-
-                                            <View style={styles.listItemContent}>
-                                                <Text style={[
-                                                    styles.listItemTitle,
-                                                    selectedLedgerId === l.id && !editMode && styles.listItemTitleSelected
-                                                ]}>{l.name}</Text>
-                                                <Text style={styles.listItemSubtitle}>{l.subLedgers?.length || 0} sub-accounts</Text>
-                                            </View>
-
-                                            {/* Action Icon */}
-                                            {editMode ? (
-                                                <TouchableOpacity
-                                                    onPress={() => handleDeleteLedger(l.id)}
-                                                    style={styles.deleteIconBtn}
-                                                >
-                                                    <MaterialCommunityIcons name="trash-can-outline" size={20} color="#EF4444" />
-                                                </TouchableOpacity>
-                                            ) : (
-                                                selectedLedgerId === l.id && (
-                                                    <MaterialCommunityIcons name="check-circle" size={22} color={theme.colors.primary} />
-                                                )
-                                            )}
-                                        </TouchableOpacity>
-                                    ))}
-
-                                    {ledgers.length === 0 && (
-                                        <View style={styles.emptyStateFancy}>
-                                            <Text style={styles.emptyTextFancy}>No ledgers found.</Text>
-                                        </View>
-                                    )}
-                                </ScrollView>
-
-                                <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowLedgerSelectModal(false)}>
-                                    <Text style={styles.closeModalText}>Close</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
-            </Modal>
+                onClose={() => setShowLedgerSelectModal(false)}
+                ledgers={ledgers}
+                searchQuery={searchLedgerQuery}
+                onSearchChange={setSearchLedgerQuery}
+                isAdmin={isAdmin}
+                editMode={editMode}
+                onEditModeChange={setEditMode}
+                newName={newLedgerName}
+                onNewNameChange={setNewLedgerName}
+                onAdd={handleAddLedger}
+                onSelect={(l) => {
+                    setSelectedLedgerId(l.id);
+                    setSelectedSubLedger('');
+                    clearCategorySpecificState();
+                    setShowLedgerSelectModal(false);
+                }}
+                selectedId={selectedLedgerId}
+                onDelete={handleDeleteLedger}
+            />
 
             {/* ================= SUB-LEDGER SELECTION & MANAGEMENT MODAL ================= */}
-            <Modal
+            <SubLedgerSelectModal
                 visible={showSubLedgerSelectModal}
-                animationType="fade"
-                transparent={true}
-                onRequestClose={() => setShowSubLedgerSelectModal(false)}
-            >
-                <TouchableWithoutFeedback onPress={() => setShowSubLedgerSelectModal(false)}>
-                    <View style={styles.modalOverlayCenter}>
-                        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                            <View style={styles.modalContainerFancy}>
-                                {/* Header */}
-                                <View style={styles.modalHeaderInfo}>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                        <MaterialCommunityIcons name="account-group" size={24} color={theme.colors.primary} />
-                                        <Text style={styles.modalTitleFancy}>Select Sub-Ledger</Text>
-                                    </View>
-                                    <Text style={styles.modalSubtitleFancy}>
-                                        Under: <Text style={{ fontWeight: '700', color: theme.colors.primary }}>{selectedLedgerObj?.name}</Text>
-                                    </Text>
-                                </View>
-
-                                {/* Controls */}
-                                <View style={styles.modalControlsRow}>
-                                    <View style={{ flex: 1 }} />
-
-                                    {isAdmin && (
-                                        <TouchableOpacity
-                                            style={[styles.manageBtnFancy, editMode && styles.manageBtnActive]}
-                                            onPress={() => setEditMode(!editMode)}
-                                        >
-                                            <MaterialCommunityIcons name={editMode ? "check" : "pencil"} size={20} color={editMode ? "white" : theme.colors.primary} />
-                                            <Text style={[styles.manageBtnText, editMode && { color: 'white' }]}>
-                                                {editMode ? 'Done' : 'Edit'}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-
-                                {/* Add New (Edit Mode) */}
-                                {editMode && (
-                                    <View style={styles.addNewRowFancy}>
-                                        <TextInput
-                                            style={styles.addNewInputFancy}
-                                            placeholder="Add Name (e.g. John Doe)"
-                                            placeholderTextColor={theme.colors.textTertiary}
-                                            value={newSubLedgerName}
-                                            onChangeText={setNewSubLedgerName}
-                                        />
-                                        <TouchableOpacity
-                                            style={[styles.addBtnFancy, !newSubLedgerName.trim() && styles.disabledBtn]}
-                                            onPress={handleAddSubLedger}
-                                            disabled={!newSubLedgerName.trim()}
-                                        >
-                                            <MaterialCommunityIcons name="plus" size={22} color="white" />
-                                        </TouchableOpacity>
-                                    </View>
-                                )}
-
-                                <ScrollView style={styles.listFancy} showsVerticalScrollIndicator={false}>
-                                    {selectedLedgerObj?.subLedgers && selectedLedgerObj.subLedgers.length > 0 ? (
-                                        selectedLedgerObj.subLedgers.map((subName, idx) => (
-                                            <TouchableOpacity
-                                                key={idx}
-                                                style={[
-                                                    styles.listItemFancy,
-                                                    selectedSubLedger === subName && !editMode && styles.listItemSelected
-                                                ]}
-                                                onPress={() => {
-                                                    if (!editMode) {
-                                                        setSelectedSubLedger(subName);
-                                                        setShowSubLedgerSelectModal(false);
-                                                    }
-                                                }}
-                                                activeOpacity={0.7}
-                                                disabled={editMode}
-                                            >
-                                                <LinearGradient
-                                                    colors={['#EEF2FF', '#E0E7FF']}
-                                                    style={styles.avatarFancy}
-                                                >
-                                                    <Text style={styles.avatarTextFancy}>{subName.charAt(0)}</Text>
-                                                </LinearGradient>
-
-                                                <View style={styles.listItemContent}>
-                                                    <Text style={[
-                                                        styles.listItemTitle,
-                                                        selectedSubLedger === subName && !editMode && styles.listItemTitleSelected
-                                                    ]}>{subName}</Text>
-                                                </View>
-
-                                                {/* Actions */}
-                                                {editMode ? (
-                                                    <TouchableOpacity
-                                                        onPress={() => handleDeleteSubLedger(subName)}
-                                                        style={styles.deleteIconBtn}
-                                                    >
-                                                        <MaterialCommunityIcons name="trash-can-outline" size={20} color="#EF4444" />
-                                                    </TouchableOpacity>
-                                                ) : (
-                                                    selectedSubLedger === subName && (
-                                                        <MaterialCommunityIcons name="check-circle" size={22} color={theme.colors.primary} />
-                                                    )
-                                                )}
-                                            </TouchableOpacity>
-                                        ))
-                                    ) : (
-                                        <View style={styles.emptyStateFancy}>
-                                            <MaterialCommunityIcons name="account-search-outline" size={48} color={theme.colors.textTertiary} />
-                                            <Text style={styles.emptyTextFancy}>No names added yet.</Text>
-                                            {isAdmin && <Text style={styles.emptySubTextFancy}>Tap 'Edit' to add people.</Text>}
-                                        </View>
-                                    )}
-                                </ScrollView>
-
-                                <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowSubLedgerSelectModal(false)}>
-                                    <Text style={styles.closeModalText}>Close</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </TouchableWithoutFeedback>
-                    </View >
-                </TouchableWithoutFeedback >
-            </Modal >
+                onClose={() => setShowSubLedgerSelectModal(false)}
+                selectedLedgerObj={selectedLedgerObj}
+                isAdmin={isAdmin}
+                editMode={editMode}
+                onEditModeChange={setEditMode}
+                newName={newSubLedgerName}
+                onNewNameChange={setNewSubLedgerName}
+                onAdd={handleAddSubLedger}
+                onSelect={(subName) => {
+                    setSelectedSubLedger(subName);
+                    clearCategorySpecificState();
+                    setShowSubLedgerSelectModal(false);
+                }}
+                selectedSubLedger={selectedSubLedger}
+                othersValue={othersSubLedgerValue}
+                onDelete={handleDeleteSubLedger}
+            />
         </SafeAreaView >
     );
 }
@@ -2130,6 +1517,8 @@ ProjectDetailScreen.propTypes = {
     route: PropTypes.shape({
         params: PropTypes.shape({
             projectId: PropTypes.string,
+            viewMode: PropTypes.string,
+            focusOnAdd: PropTypes.bool,
         }),
     }),
 };
@@ -2182,6 +1571,129 @@ const styles = StyleSheet.create({
     exitButtonWithText: {
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    downloadButtonWithText: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    downloadIconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: theme.colors.primaryLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    downloadButtonLabel: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: theme.colors.primary,
+        marginTop: 2,
+    },
+    exportFormatModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(15, 23, 42, 0.45)',
+        justifyContent: 'flex-end',
+    },
+    exportFormatModalBackdrop: {
+        flex: 1,
+    },
+    exportFormatModalCard: {
+        backgroundColor: theme.colors.surface,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        paddingHorizontal: 18,
+        paddingTop: 10,
+        paddingBottom: 22,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    exportFormatHandle: {
+        alignSelf: 'center',
+        width: 44,
+        height: 5,
+        borderRadius: 3,
+        backgroundColor: theme.colors.border,
+        marginBottom: 14,
+    },
+    exportFormatHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 14,
+    },
+    exportFormatIconWrap: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    exportFormatHeaderTextWrap: {
+        flex: 1,
+    },
+    exportFormatTitle: {
+        ...theme.typography.h4,
+        color: theme.colors.textPrimary,
+    },
+    exportFormatSubtitle: {
+        ...theme.typography.caption,
+        color: theme.colors.textSecondary,
+        marginTop: 2,
+    },
+    exportFormatOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.surfaceAlt,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        paddingHorizontal: 12,
+        paddingVertical: 12,
+        marginBottom: 10,
+    },
+    exportFormatOptionIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 10,
+    },
+    exportFormatOptionTextWrap: {
+        flex: 1,
+        marginRight: 8,
+    },
+    exportFormatOptionTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: theme.colors.textPrimary,
+    },
+    exportFormatOptionDesc: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+        marginTop: 2,
+        lineHeight: 17,
+    },
+    exportFormatCancelBtn: {
+        marginTop: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surfaceAlt,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+    },
+    exportFormatCancelText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: theme.colors.textSecondary,
     },
     exitIconContainer: {
         width: 36,
@@ -2376,6 +1888,61 @@ const styles = StyleSheet.create({
         color: 'white',
         fontWeight: '600',
     },
+    // Ledger Section
+    ledgerSection: {
+        marginBottom: 16,
+    },
+    othersCategorySection: {
+        marginTop: -6,
+        marginBottom: 14,
+    },
+    othersButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.primary,
+        borderRadius: 12,
+        paddingVertical: 10,
+        backgroundColor: theme.colors.surface,
+    },
+    othersButtonActive: {
+        backgroundColor: theme.colors.primary,
+        borderColor: theme.colors.primary,
+    },
+    othersButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: theme.colors.primary,
+    },
+    othersButtonTextActive: {
+        color: 'white',
+    },
+    dropdownButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: theme.colors.surfaceAlt,
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    dropdownButtonText: {
+        fontSize: 14,
+        color: theme.colors.textPrimary,
+        flex: 1,
+        marginRight: 8,
+    },
+    placeholderText: {
+        color: theme.colors.textTertiary,
+    },
+    disabledInput: {
+        opacity: 0.6,
+        backgroundColor: '#F3F4F6',
+    },
     amountSection: {
         marginTop: 16,
         marginBottom: 16,
@@ -2528,63 +2095,131 @@ const styles = StyleSheet.create({
         shadowRadius: 6,
         elevation: 3,
     },
-    // Enhanced 7-Day Calendar Styles
-    calendarScroll: {
-        maxHeight: 110,
-        marginTop: 10,
+    calendarModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(15, 23, 42, 0.45)',
+        justifyContent: 'center',
+        paddingHorizontal: 16,
     },
-    calendarScrollContainer: {
-        paddingVertical: 10,
-        paddingHorizontal: 2,
-        gap: 10,
+    calendarBackdrop: {
+        ...StyleSheet.absoluteFillObject,
     },
-    calendarDay: {
-        width: 68,
-        paddingVertical: 14,
-        paddingHorizontal: 10,
-        backgroundColor: '#FAFAFA',
+    calendarModalCard: {
+        backgroundColor: theme.colors.surface,
+        borderRadius: 20,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        ...theme.shadows.card,
+    },
+    calendarModalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 12,
+    },
+    calendarModalTitle: {
+        ...theme.typography.h4,
+        color: theme.colors.textPrimary,
+    },
+    calendarCloseButton: {
+        width: 32,
+        height: 32,
         borderRadius: 16,
         alignItems: 'center',
-        borderWidth: 1.5,
-        borderColor: '#E8E8E8',
-        marginHorizontal: 4,
+        justifyContent: 'center',
+        backgroundColor: theme.colors.surfaceAlt,
     },
-    calendarDaySelected: {
-        backgroundColor: '#6366F1',
-        borderColor: '#6366F1',
-        shadowColor: '#6366F1',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.35,
-        shadowRadius: 10,
-        elevation: 8,
-        transform: [{ scale: 1.02 }],
+    calendarMonthNavRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 14,
     },
-    calendarDayName: {
-        fontSize: 10,
-        fontWeight: '700',
-        color: theme.colors.textSecondary,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
+    calendarNavButton: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.colors.surfaceAlt,
     },
-    calendarDayNameSelected: {
-        color: 'rgba(255,255,255,0.9)',
-    },
-    calendarDayNum: {
-        fontSize: 22,
-        fontWeight: '800',
+    calendarMonthTitle: {
+        ...theme.typography.bodySemibold,
         color: theme.colors.textPrimary,
-        marginVertical: 6,
     },
-    calendarDayNumSelected: {
+    calendarWeekdayRow: {
+        flexDirection: 'row',
+        marginBottom: 8,
+    },
+    calendarWeekdayText: {
+        flex: 1,
+        textAlign: 'center',
+        ...theme.typography.caption,
+        color: theme.colors.textSecondary,
+    },
+    calendarGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+    },
+    calendarDayCell: {
+        width: '14.2857%',
+        aspectRatio: 1,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 6,
+    },
+    calendarDayCellEmpty: {
+        width: '14.2857%',
+        aspectRatio: 1,
+        marginBottom: 6,
+    },
+    calendarDayCellSelected: {
+        backgroundColor: theme.colors.primary,
+    },
+    calendarDayCellDisabled: {
+        opacity: 0.4,
+    },
+    calendarDayCellText: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.textPrimary,
+    },
+    calendarDayCellTextSelected: {
         color: 'white',
+        fontWeight: '700',
     },
-    calendarMonth: {
-        fontSize: 10,
-        fontWeight: '500',
+    calendarDayCellTextDisabled: {
         color: theme.colors.textTertiary,
     },
-    calendarMonthSelected: {
-        color: 'rgba(255,255,255,0.8)',
+    calendarModalFooter: {
+        flexDirection: 'row',
+        gap: 10,
+        marginTop: 10,
+    },
+    calendarFooterSecondaryButton: {
+        flex: 1,
+        borderRadius: 12,
+        paddingVertical: 11,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surfaceAlt,
+    },
+    calendarFooterSecondaryText: {
+        ...theme.typography.bodySemibold,
+        color: theme.colors.textSecondary,
+    },
+    calendarFooterPrimaryButton: {
+        flex: 1,
+        borderRadius: 12,
+        paddingVertical: 11,
+        alignItems: 'center',
+        backgroundColor: theme.colors.primary,
+    },
+    calendarFooterPrimaryText: {
+        ...theme.typography.bodySemibold,
+        color: 'white',
     },
     addSpendingBtn: {
         borderRadius: 14,
@@ -2835,6 +2470,17 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         marginRight: 12,
     },
+    noteButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.colors.surfaceAlt,
+    },
+    noteButtonActive: {
+        backgroundColor: theme.colors.primaryLight,
+    },
     spendingContent: {
         flex: 1,
     },
@@ -2853,6 +2499,60 @@ const styles = StyleSheet.create({
     spendingAmount: {
         ...theme.typography.bodySemibold,
         color: theme.colors.danger,
+    },
+    viewMoreButton: {
+        marginTop: 10,
+        marginBottom: 4,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        backgroundColor: theme.colors.primaryLight,
+        borderWidth: 1,
+        borderColor: theme.colors.primary + '33',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+    },
+    viewMoreButtonText: {
+        ...theme.typography.bodySemibold,
+        color: theme.colors.primary,
+    },
+    fullListContainer: {
+        flex: 1,
+        backgroundColor: theme.colors.background,
+    },
+    fullListHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.borderLight,
+    },
+    fullListBackButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.colors.surfaceAlt,
+    },
+    fullListHeaderTextWrap: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    fullListTitle: {
+        ...theme.typography.h4,
+        color: theme.colors.textPrimary,
+    },
+    fullListSubtitle: {
+        ...theme.typography.caption,
+        color: theme.colors.textSecondary,
+    },
+    fullListScrollContent: {
+        paddingHorizontal: 16,
+        paddingBottom: 32,
     },
     emptyState: {
         alignItems: 'center',
@@ -3232,620 +2932,8 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'flex-end',
     },
-    modalOverlayCenter: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    modalContent: {
-        backgroundColor: theme.colors.surface,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        maxHeight: '80%',
-        paddingBottom: 20,
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.border,
-    },
-    modalTitle: {
-        ...theme.typography.h4,
-        color: theme.colors.textPrimary,
-    },
-    modalList: {
-        paddingHorizontal: 20,
-        maxHeight: '100%',
-    },
-    searchContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: theme.colors.surfaceAlt,
-        marginHorizontal: 20,
-        marginTop: 16,
-        marginBottom: 8,
-        borderRadius: 12,
-        paddingHorizontal: 14,
-    },
-    searchInput: {
-        flex: 1,
-        paddingVertical: 12,
-        paddingHorizontal: 10,
-        ...theme.typography.body,
-        color: theme.colors.textPrimary,
-    },
-    modalMemberCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 14,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.borderLight,
-    },
-    modalMemberAvatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
-        backgroundColor: theme.colors.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    modalMemberInitials: {
-        color: 'white',
-        fontWeight: '700',
-        fontSize: 14,
-    },
-    modalMemberInfo: {
-        flex: 1,
-    },
-    modalMemberName: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textPrimary,
-    },
-    modalMemberEmail: {
-        ...theme.typography.caption,
-        color: theme.colors.textSecondary,
-        marginTop: 2,
-    },
-    modalAddBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: theme.colors.success,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    // Spending Detail Modal
-    detailCard: {
-        marginTop: 16,
-    },
-    detailAmountRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 16,
-    },
-    detailAmount: {
-        ...theme.typography.hero,
-        color: theme.colors.textPrimary,
-    },
-    detailCategoryBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
-        gap: 6,
-    },
-    detailCategoryText: {
-        fontWeight: '600',
-    },
-    detailDescription: {
-        ...theme.typography.body,
-        color: theme.colors.textPrimary,
-        marginBottom: 20,
-    },
-    detailInfoRows: {
-        gap: 12,
-    },
-    detailInfoRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-    },
-    detailInfoText: {
-        ...theme.typography.body,
-        color: theme.colors.textSecondary,
-    },
-    approvalsSection: {
-        marginTop: 24,
-        paddingTop: 16,
-        borderTopWidth: 1,
-        borderTopColor: theme.colors.border,
-    },
-    approvalsSectionTitle: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textPrimary,
-        marginBottom: 12,
-    },
-    approvalRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 10,
-    },
-    approvalUserBadge: {
-        width: 32,
-        height: 32,
-        borderRadius: 10,
-        backgroundColor: theme.colors.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 10,
-    },
-    approvalUserInitial: {
-        color: 'white',
-        fontWeight: '700',
-        fontSize: 12,
-    },
-    approvalUserName: {
-        flex: 1,
-        ...theme.typography.body,
-        color: theme.colors.textPrimary,
-    },
-    approvalStatusBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#D1FAE5',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 10,
-        gap: 4,
-    },
-    approvalStatusText: {
-        color: '#10B981',
-        fontWeight: '500',
-        fontSize: 12,
-    },
-    // Options Modal
-    optionsOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'flex-end',
-    },
-    optionsContent: {
-        backgroundColor: theme.colors.surface,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        padding: 20,
-        paddingBottom: 40,
-    },
-    optionsTitle: {
-        ...theme.typography.h4,
-        color: theme.colors.textPrimary,
-        textAlign: 'center',
-        marginBottom: 20,
-    },
-    optionItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 16,
-        gap: 12,
-    },
-    optionItemDanger: {
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.borderLight,
-    },
-    optionText: {
-        ...theme.typography.body,
-        color: theme.colors.textPrimary,
-    },
-    optionTextDanger: {
-        color: theme.colors.danger,
-    },
-    optionItemCancel: {
-        paddingVertical: 16,
-        alignItems: 'center',
-    },
-    optionCancelText: {
-        ...theme.typography.bodyMedium,
-        color: theme.colors.textSecondary,
-    },
-    // Note Feature Styles
-    noteButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: theme.colors.surfaceAlt,
-        marginRight: 8,
-    },
-    noteButtonActive: {
-        backgroundColor: '#EEF2FF',
-        borderWidth: 1,
-        borderColor: '#6366F1',
-    },
-    noteModalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    noteModalContainer: {
-        backgroundColor: theme.colors.surface,
-        marginHorizontal: 20,
-        borderRadius: 24,
-        padding: 24,
-        width: SCREEN_WIDTH - 40,
-        maxHeight: SCREEN_HEIGHT * 0.7,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.15,
-        shadowRadius: 20,
-    },
-    noteModalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    noteModalTitleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    noteIconBadge: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        backgroundColor: '#EEF2FF',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    noteModalTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: theme.colors.textPrimary,
-    },
-    closeNoteBtn: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: theme.colors.surfaceAlt,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    noteAlertText: {
-        fontSize: 14,
-        color: theme.colors.textSecondary,
-        marginBottom: 16,
-        lineHeight: 20,
-    },
-    noteInputWrapper: {
-        backgroundColor: '#F8FAFC',
-        borderRadius: 16,
-        padding: 4,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        marginBottom: 20,
-    },
-    noteInput: {
-        padding: 12,
-        fontSize: 15,
-        color: theme.colors.textPrimary,
-        minHeight: 100,
-        textAlignVertical: 'top',
-    },
-    noteModalFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: 12,
-    },
-    modalCancelBtn: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 12,
-    },
-    modalCancelText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: theme.colors.textSecondary,
-    },
-    saveNoteBtn: {
-        borderRadius: 12,
-        overflow: 'hidden',
-    },
-    saveNoteGradient: {
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-    },
-    saveNoteText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: 'white',
-    },
-    // View Only Banner (for Passive Members)
-    viewOnlyBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(107, 114, 128, 0.12)',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(107, 114, 128, 0.25)',
-        gap: 14,
-    },
-    viewOnlyIconContainer: {
-        width: 50,
-        height: 50,
-        borderRadius: 12,
-        backgroundColor: 'rgba(107, 114, 128, 0.18)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    viewOnlyContent: {
-        flex: 1,
-    },
-    viewOnlyTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: '#4B5563',
-        marginBottom: 4,
-    },
-    viewOnlySubtitle: {
-        fontSize: 13,
-        lineHeight: 19,
-        color: '#6B7280',
-    },
-    // Ledger UI
-    // Styles for New Ledger Dropdowns
-    dropdownButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: theme.colors.surfaceAlt,
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        paddingVertical: 12,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        marginTop: 6,
-    },
-    dropdownButtonText: {
-        ...theme.typography.body,
-        color: theme.colors.textPrimary,
-        flex: 1,
-        marginRight: 8,
-    },
-    placeholderText: {
-        color: theme.colors.textTertiary,
-    },
-    disabledInput: {
-        backgroundColor: theme.colors.background,
-        opacity: 0.6,
-    },
 
-    // FANCY MODAL STYLES
-    modalContainerFancy: {
-        width: SCREEN_WIDTH - 40,
-        backgroundColor: theme.colors.surface,
-        borderRadius: 24,
-        padding: 20,
-        maxHeight: SCREEN_HEIGHT * 0.75,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.2,
-        shadowRadius: 20,
-        alignSelf: 'center',
-    },
-    modalHeaderInfo: {
-        marginBottom: 16,
-    },
-    modalTitleFancy: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: theme.colors.textPrimary,
-        marginBottom: 4,
-    },
-    modalSubtitleFancy: {
-        fontSize: 14,
-        color: theme.colors.textSecondary,
-    },
-    modalControlsRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        marginBottom: 16,
-    },
-    searchBoxFancy: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: theme.colors.surfaceAlt,
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        height: 44,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-    },
-    searchInputFancy: {
-        flex: 1,
-        marginLeft: 8,
-        fontSize: 15,
-        color: theme.colors.textPrimary,
-        height: '100%',
-    },
-    manageBtnFancy: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 14,
-        height: 44,
-        borderRadius: 12,
-        backgroundColor: '#EEF2FF',
-    },
-    manageBtnActive: {
-        backgroundColor: theme.colors.primary,
-    },
-    manageBtnText: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: theme.colors.primary,
-    },
-    addNewRowFancy: {
-        flexDirection: 'row',
-        gap: 10,
-        marginBottom: 16,
-    },
-    addNewInputFancy: {
-        flex: 1,
-        height: 48,
-        backgroundColor: theme.colors.surfaceAlt,
-        borderRadius: 12,
-        paddingHorizontal: 12,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
-        color: theme.colors.textPrimary,
-    },
-    addBtnFancy: {
-        width: 48,
-        height: 48,
-        borderRadius: 12,
-        backgroundColor: theme.colors.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    listFancy: {
-        maxHeight: 300,
-    },
-    listItemFancy: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: theme.colors.borderLight,
-        gap: 14,
-    },
-    listItemSelected: {
-        backgroundColor: '#EEF2FF',
-        borderRadius: 12,
-        borderBottomWidth: 0,
-    },
-    iconBoxFancy: {
-        width: 40,
-        height: 40,
-        borderRadius: 10,
-        backgroundColor: '#F3F4F6',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    avatarFancy: {
-        width: 40,
-        height: 40,
-        borderRadius: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    avatarTextFancy: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: theme.colors.primary,
-    },
-    listItemContent: {
-        flex: 1,
-    },
-    listItemTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: theme.colors.textPrimary,
-    },
-    listItemTitleSelected: {
-        color: theme.colors.primary,
-    },
-    listItemSubtitle: {
-        fontSize: 12,
-        color: theme.colors.textTertiary,
-        marginTop: 2,
-    },
-    deleteIconBtn: {
-        padding: 8,
-        backgroundColor: '#FEE2E2',
-        borderRadius: 8,
-    },
-    emptyStateFancy: {
-        alignItems: 'center',
-        paddingVertical: 30,
-        gap: 8,
-    },
-    emptyTextFancy: {
-        fontSize: 16,
-        color: theme.colors.textSecondary,
-        fontWeight: '500',
-    },
-    emptySubTextFancy: {
-        fontSize: 14,
-        color: theme.colors.textTertiary,
-    },
-    closeModalBtn: {
-        marginTop: 16,
-        alignItems: 'center',
-        paddingVertical: 12,
-    },
-    closeModalText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: theme.colors.textSecondary,
-    },
-    // Missing Styles for Account Book Header
-    accountBookHeaderLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12, // Ensure gap between icon and title
-    },
-    ledgerIcon: {
-        width: 48,
-        height: 48,
-        borderRadius: 14,
-        backgroundColor: '#EEF2FF',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 4, // Backup gap
-    },
-    formTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: theme.colors.textPrimary,
-    },
-    formSubtitle: {
-        fontSize: 12,
-        color: theme.colors.textSecondary,
-        marginTop: 2,
-    },
-    entryNumberBadge: {
-        backgroundColor: '#F3F4F6',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-    },
-    entryNumberText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: theme.colors.textSecondary,
-    },
-    ledgerLine: {
-        height: 1,
-        backgroundColor: theme.colors.borderLight,
-        marginVertical: 16,
-    },
+
     // NEW Styles for Investment Type
     investmentTypeRow: {
         flexDirection: 'row',

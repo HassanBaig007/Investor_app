@@ -1,0 +1,125 @@
+﻿node.exe : npm warn using --force Recommended protections disabled.
+At C:\Users\Hassa\AppData\Roaming\npm\npm.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npm-cli.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn using ...tions disabled.:Strin 
+   g) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+> splitflowandroid@1.0.1 test
+> jest src/services/__tests__/api.test.js
+
+  console.log
+    [API] Base URL: http://localhost:3000/api
+
+      at Object.log (src/services/api.js:27:9)
+
+  console.log
+    [API] Fallback Candidates: [ 'http://localhost:3000' ]
+
+      at Object.log (src/services/api.js:28:9)
+
+FAIL src/services/__tests__/api.test.js
+  api service
+    Token Management
+      ├ù persistAuthTokens should save tokens to AsyncStorage (3 ms)
+      ├ù clearAuthTokens should remove tokens from AsyncStorage (2 ms)
+    api.login
+      ├ù should call /auth/login and persist tokens on success (6 ms)
+      ΓêÜ should throw enhanced error on failure (1 ms)
+    api.getAdminStats
+      ΓêÜ should fetch stats from /admin/stats (1 ms)
+
+  ΓùÅ api service ΓÇ║ Token Management ΓÇ║ persistAuthTokens should save tokens to 
+AsyncStorage
+
+    TypeError: (0 , _api.persistAuthTokens) is not a function
+
+    [0m [90m 41 |[39m     describe([32m'Token Management'[39m[33m,[39m () 
+[33m=>[39m {
+     [90m 42 |[39m         it([32m'persistAuthTokens should save tokens to 
+AsyncStorage'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 43 |[39m             [36mawait[39m 
+persistAuthTokens({ accessToken[33m:[39m [32m'at'[39m[33m,[39m 
+refreshToken[33m:[39m [32m'rt'[39m })[33m;[39m
+     [90m    |[39m                                    [31m[1m^[22m[39m
+     [90m 44 |[39m             expect([33mAsyncStorage[39m[33m.[39msetItem)[33
+m.[39mtoHaveBeenCalledWith([32m'token'[39m[33m,[39m [32m'at'[39m)[33m;[39m
+     [90m 45 |[39m             expect([33mAsyncStorage[39m[33m.[39msetItem)[33
+m.[39mtoHaveBeenCalledWith([32m'refreshToken'[39m[33m,[39m 
+[32m'rt'[39m)[33m;[39m
+     [90m 46 |[39m         })[33m;[39m[0m
+
+      at Object.<anonymous> (src/services/__tests__/api.test.js:43:36)
+      at asyncGeneratorStep 
+(node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> 
+(node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+
+  ΓùÅ api service ΓÇ║ Token Management ΓÇ║ clearAuthTokens should remove tokens from 
+AsyncStorage
+
+    TypeError: (0 , _api.clearAuthTokens) is not a function
+
+    [0m [90m 47 |[39m
+     [90m 48 |[39m         it([32m'clearAuthTokens should remove tokens from 
+AsyncStorage'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 49 |[39m             [36mawait[39m 
+clearAuthTokens()[33m;[39m
+     [90m    |[39m                                  [31m[1m^[22m[39m
+     [90m 50 |[39m             expect([33mAsyncStorage[39m[33m.[39mremoveItem)
+[33m.[39mtoHaveBeenCalledWith([32m'token'[39m)[33m;[39m
+     [90m 51 |[39m             expect([33mAsyncStorage[39m[33m.[39mremoveItem)
+[33m.[39mtoHaveBeenCalledWith([32m'refreshToken'[39m)[33m;[39m
+     [90m 52 |[39m         })[33m;[39m[0m
+
+      at Object.<anonymous> (src/services/__tests__/api.test.js:49:34)
+      at asyncGeneratorStep 
+(node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+      at node_modules/@babel/runtime/helpers/asyncToGenerator.js:22:7
+      at Object.<anonymous> 
+(node_modules/@babel/runtime/helpers/asyncToGenerator.js:14:12)
+
+  ΓùÅ api service ΓÇ║ api.login ΓÇ║ should call /auth/login and persist tokens on 
+success
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    - Expected
+    + Received
+
+      "/auth/login",
+      Object {
+    +   "email": "user@test.com",
+        "identifier": "user@test.com",
+        "password": "password123",
+      },
+
+    Number of calls: 1
+
+    [0m [90m 66 |[39m             [36mconst[39m result [33m=[39m 
+[36mawait[39m api[33m.[39mlogin([32m'user@test.com'[39m[33m,[39m 
+[32m'password123'[39m)[33m;[39m
+     [90m 67 |[39m
+    [31m[1m>[22m[39m[90m 68 |[39m             expect(mockAxios[33m.[39mpost)
+[33m.[39mtoHaveBeenCalledWith([32m'/auth/login'[39m[33m,[39m {
+     [90m    |[39m                                    [31m[1m^[22m[39m
+     [90m 69 |[39m                 identifier[33m:[39m 
+[32m'user@test.com'[39m[33m,[39m
+     [90m 70 |[39m                 password[33m:[39m [32m'password123'[39m
+     [90m 71 |[39m             })[33m;[39m[0m
+
+      at Object.toHaveBeenCalledWith (src/services/__tests__/api.test.js:68:36)
+      at asyncGeneratorStep 
+(node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+      at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 2 passed, 5 total
+Snapshots:   0 total
+Time:        0.666 s, estimated 2 s
+Ran all test suites matching src/services/__tests__/api.test.js.

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import PropTypes from 'prop-types';
 import {
     View,
     Text,
@@ -7,48 +8,131 @@ import {
     TouchableOpacity,
     StatusBar,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme, formatCurrency } from '../../components/Theme';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
+import { api } from '../../services/api';
+import { writeExportFile, FILE_EXPORT_ENCODING } from '../../utils/fileExport';
+import { shareFileUri } from '../../utils/fileShare';
 
-// Import from centralized data
-import { quarterlyReports, financialYears, formatDate } from '../../data/mockData';
+const formatDate = (dateInput) => {
+    const date = new Date(dateInput);
+    if (Number.isNaN(date.getTime())) return 'Unknown date';
+    return date.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    });
+};
 
 export default function ReportsScreen({ navigation }) {
-    const [selectedYear, setSelectedYear] = useState(financialYears[0].id);
+    const [reports, setReports] = useState([]);
+    const [selectedYear, setSelectedYear] = useState(null);
     const [downloading, setDownloading] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-    const filteredReports = quarterlyReports.filter(r =>
-        r.year === financialYears.find(fy => fy.id === selectedYear)?.label
-    );
+    useEffect(() => {
+        const loadReports = async () => {
+            try {
+                const data = await api.getQuarterlyReports();
+                const sorted = (data || []).sort((a, b) =>
+                    new Date(b.publishedDate).getTime() - new Date(a.publishedDate).getTime()
+                );
+                setReports(sorted);
+
+                const firstYear = sorted[0]?.year || null;
+                setSelectedYear(firstYear);
+            } catch (error) {
+                console.error('Failed to load quarterly reports:', error);
+                Alert.alert('Error', 'Failed to load reports');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadReports();
+    }, []);
+
+    const financialYears = useMemo(() => {
+        const years = [...new Set((reports || []).map((r) => r.year))];
+        return years
+            .sort((a, b) => Number(b) - Number(a))
+            .map((year, index) => ({
+                id: year,
+                label: year,
+                current: index === 0,
+            }));
+    }, [reports]);
+
+    const filteredReports = reports.filter((r) => r.year === selectedYear);
+
+    const buildAndSaveReportFile = async (report, format = 'html') => {
+        const payload = await api.downloadQuarterlyReport(report.id, format);
+        const fileName = payload?.filename || `${report.id}_investment_report.${payload?.format || format}`;
+        const shouldUseBase64 = payload?.encoding === 'base64';
+        const fileUri = await writeExportFile({
+            fileName,
+            content: payload?.content || '',
+            encoding: shouldUseBase64
+                ? FILE_EXPORT_ENCODING.BASE64
+                : FILE_EXPORT_ENCODING.UTF8,
+        });
+
+        return {
+            fileUri,
+            fileName,
+            mimeType: payload?.mimeType || 'text/plain',
+        };
+    };
 
     const handleDownload = async (report) => {
-        setDownloading(report.id);
-
-        // Simulate download
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        setDownloading(null);
-        Alert.alert(
-            'Download Complete',
-            `${report.quarter} ${report.year} report has been downloaded successfully.`,
-            [{ text: 'View', onPress: () => { } }, { text: 'OK' }]
-        );
+        try {
+            setDownloading(report.id);
+            const { fileName } = await buildAndSaveReportFile(report, 'html');
+            Alert.alert(
+                'Download Complete',
+                `${fileName} has been saved locally and is ready to share/open.`,
+                [{ text: 'OK' }]
+            );
+        } catch (error) {
+            console.error('Failed to download report:', error);
+            Alert.alert('Error', 'Failed to download report. Please try again.');
+        } finally {
+            setDownloading(null);
+        }
     };
 
-    const handleShareReport = (report) => {
-        Alert.alert(
-            'Share Report',
-            'Share this report via:',
-            [
-                { text: 'Email', onPress: () => { } },
-                { text: 'WhatsApp', onPress: () => { } },
-                { text: 'Cancel', style: 'cancel' },
-            ]
-        );
+    const handleShareReport = async (report) => {
+        try {
+            setDownloading(report.id);
+            const { fileUri, mimeType } = await buildAndSaveReportFile(report, 'html');
+            const didShare = await shareFileUri(fileUri, {
+                mimeType,
+                dialogTitle: `${report.quarter} ${report.year} Report`,
+            });
+
+            if (!didShare) {
+                Alert.alert('Share Unavailable', 'Sharing is not available on this device.');
+                return;
+            }
+        } catch (error) {
+            console.error('Failed to share report:', error);
+            Alert.alert('Error', 'Failed to share report. Please try again.');
+        } finally {
+            setDownloading(null);
+        }
     };
+
+    if (loading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
@@ -97,7 +181,7 @@ export default function ReportsScreen({ navigation }) {
                         <View style={styles.summaryHeader}>
                             <Ionicons name="document-text" size={24} color="white" />
                             <Text style={styles.summaryTitle}>
-                                {financialYears.find(fy => fy.id === selectedYear)?.label} Summary
+                                {selectedYear || 'Selected Year'} Summary
                             </Text>
                         </View>
                         <View style={styles.summaryStats}>
@@ -173,7 +257,7 @@ export default function ReportsScreen({ navigation }) {
                                 <View style={styles.investmentsCovered}>
                                     <Text style={styles.investmentsCoveredLabel}>Investments covered:</Text>
                                     <Text style={styles.investmentsCoveredValue}>
-                                        {report.investments.join(', ')}
+                                        {(report.investments || []).join(', ')}
                                     </Text>
                                 </View>
 
@@ -224,12 +308,31 @@ export default function ReportsScreen({ navigation }) {
                         </TouchableOpacity>
                     </View>
                 )}
+
+                {/* Financial Disclaimer — required by App Store / Play Store for financial apps */}
+                <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 }}>
+                    <Text style={{ fontSize: 11, color: theme.colors.textSecondary, textAlign: 'center', lineHeight: 16 }}>
+                        Past performance is not indicative of future results. All financial data shown is for informational purposes only and does not constitute investment advice.
+                    </Text>
+                </View>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
+ReportsScreen.propTypes = {
+    navigation: PropTypes.shape({
+        goBack: PropTypes.func,
+    }),
+};
+
 const styles = StyleSheet.create({
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: theme.colors.background,
+    },
     container: {
         flex: 1,
         backgroundColor: theme.colors.background,

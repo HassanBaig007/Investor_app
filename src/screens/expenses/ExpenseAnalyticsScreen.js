@@ -18,18 +18,13 @@ import {
     Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import LinearGradient from 'react-native-linear-gradient';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { theme } from '../../components/Theme';
-import {
-    getDailyExpenseSummary,
-    getExpenseTrends,
-    getExpensesByDateRange,
-    getAllCombinedExpenses,
-    expenseCategories,
-    getCurrentUser,
-} from '../../data/mockData';
-import { exportExpenses } from '../../utils/expenseExporter';
+import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
+import { writeExportFile, FILE_EXPORT_ENCODING } from '../../utils/fileExport';
+import { shareFileUri } from '../../utils/fileShare';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -58,46 +53,149 @@ const CATEGORY_COLORS = {
     other: '#6B7280',
 };
 
+const EXPENSE_CATEGORIES = [
+    { id: 'food', label: 'Food' },
+    { id: 'transport', label: 'Transport' },
+    { id: 'shopping', label: 'Shopping' },
+    { id: 'bills', label: 'Bills' },
+    { id: 'entertainment', label: 'Entertainment' },
+    { id: 'health', label: 'Health' },
+    { id: 'education', label: 'Education' },
+    { id: 'grocery', label: 'Grocery' },
+    { id: 'Service', label: 'Service' },
+    { id: 'Product', label: 'Product' },
+    { id: 'other', label: 'Other' },
+];
+
 export default function ExpenseAnalyticsScreen({ navigation }) {
-    const currentUser = getCurrentUser();
+    const { user: currentUser } = useAuth();
     const [summary, setSummary] = useState({});
     const [trends, setTrends] = useState([]);
-    const [selectedPeriod, setSelectedPeriod] = useState('week');
     const [exporting, setExporting] = useState(false);
 
     useEffect(() => {
         loadAnalytics();
-    }, []);
+    }, [currentUser?.id, currentUser?._id, currentUser?.role]);
 
-    const loadAnalytics = () => {
-        setSummary(getDailyExpenseSummary());
-        setTrends(getExpenseTrends());
-    };
-
-    // Quick export to HTML report (includes personal + project)
-    const handleQuickExport = async () => {
-        setExporting(true);
+    const loadAnalytics = async () => {
+        const userId = currentUser?.id || currentUser?._id;
+        if (!userId) return;
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
         const today = now.toISOString().split('T')[0];
 
-        // Use combined expenses for comprehensive export
-        const combinedExpenses = getAllCombinedExpenses(startOfMonth, today);
-        const monthName = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+        try {
+            // Single consolidated API call — replaces N+1 getSpendings per project
+            const [analytics, expenseResult, appConfig] = await Promise.all([
+                api.getExpenseAnalytics({ fromDate: startOfMonth, toDate: today }),
+                api.getMyExpenses({ fromDate: startOfMonth, toDate: today, limit: 200 }),
+                api.getAppConfig().catch(() => null),
+            ]);
 
-        await exportExpenses(combinedExpenses, 'html', {
-            title: 'Combined Expense Report',
-            dateRange: monthName,
-            userName: currentUser?.name || 'User',
-        });
-        setExporting(false);
+            // Keep raw expenses for export functionality
+            const allExpenses = (expenseResult?.expenses || []).map((expense) => {
+                const createdAt = expense.createdAt ? new Date(expense.createdAt) : null;
+                const fallbackDate = createdAt && !Number.isNaN(createdAt.getTime())
+                    ? createdAt.toISOString().split('T')[0]
+                    : today;
+                const fallbackTime = createdAt && !Number.isNaN(createdAt.getTime())
+                    ? createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                    : '';  
+                return {
+                    ...expense,
+                    id: expense.id || expense._id,
+                    source: 'project',
+                    projectName: expense.projectName || expense.project?.name || 'Project',
+                    date: expense.date || fallbackDate,
+                    time: expense.time || fallbackTime,
+                    note: expense.note || expense.description || '',
+                };
+            });
+
+            // Use server-computed analytics instead of client-side reduce
+            const categoryBreakdown = {};
+            (analytics?.categoryBreakdown || []).forEach(item => {
+                categoryBreakdown[item.category] = item.amount;
+            });
+
+            setSummary({
+                monthTotal: analytics?.totalSpent || 0,
+                budget: Number(appConfig?.defaultBudget || 100000),
+                transactionCount: allExpenses.length,
+                dailyAverage: analytics?.dailyAverage || Math.round((analytics?.totalSpent || 0) / 30),
+                categoryBreakdown,
+            });
+
+            // Build 7-day trends from raw expenses (lightweight since data is already fetched)
+            const trendsData = [];
+            for (let i = 6; i >= 0; i--) {
+                const dateObj = new Date();
+                dateObj.setDate(dateObj.getDate() - i);
+                const dateString = dateObj.toISOString().split('T')[0];
+                const dayExpenses = allExpenses.filter((expense) => expense.date === dateString);
+                trendsData.push({
+                    date: dateString,
+                    dayName: dateObj.toLocaleDateString('en-US', { weekday: 'short' }),
+                    total: dayExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0),
+                });
+            }
+            setTrends(trendsData);
+        } catch (error) {
+            console.error('Failed to load expense analytics:', error);
+            setSummary({ monthTotal: 0, budget: 0, transactionCount: 0, dailyAverage: 0, categoryBreakdown: {} });
+            setTrends([]);
+        }
+    };
+
+    // Quick export to Excel report (includes personal + project)
+    const handleQuickExport = async () => {
+        try {
+            setExporting(true);
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+            const today = now.toISOString().split('T')[0];
+
+            const exportPayload = await api.exportExpenses('xlsx', {
+                fromDate: startOfMonth,
+                toDate: today,
+            });
+
+            const fileName = exportPayload?.filename || `expense_analytics_${today}.xlsx`;
+            const shouldUseBase64 = exportPayload?.encoding === 'base64';
+            const fileUri = await writeExportFile({
+                fileName,
+                content: exportPayload?.content || '',
+                encoding: shouldUseBase64
+                    ? FILE_EXPORT_ENCODING.BASE64
+                    : FILE_EXPORT_ENCODING.UTF8,
+            });
+
+            const didShare = await shareFileUri(fileUri, {
+                dialogTitle: 'Expense Analytics Report',
+                mimeType: exportPayload?.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            });
+
+            if (!didShare) {
+                Alert.alert('Export Complete', `File saved successfully: ${fileName}`);
+                return;
+            }
+        } catch (error) {
+            console.error('Failed to export analytics report:', error);
+            const backendMessage = error?.response?.data?.message;
+            Alert.alert(
+                'Export Failed',
+                backendMessage || 'Could not export analytics report. Please try again.'
+            );
+        } finally {
+            setExporting(false);
+        }
     };
 
     // Calculate max trend value for chart scaling
     const maxTrendValue = Math.max(...trends.map(t => t.total), 1);
 
     // Get sorted categories by amount
-    const sortedCategories = expenseCategories
+    const sortedCategories = EXPENSE_CATEGORIES
         .map(cat => ({
             ...cat,
             amount: summary.categoryBreakdown?.[cat.id] || 0,

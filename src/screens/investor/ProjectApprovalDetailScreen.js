@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import {
     View,
@@ -7,16 +7,65 @@ import {
     StyleSheet,
     TouchableOpacity,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme, formatCurrency } from '../../components/Theme';
-import { pendingModifications, investors, currentUser, getRelativeTime, getDaysRemaining } from '../../data/mockData';
+import { getRelativeTime, getDaysRemaining } from '../../utils/dateTimeUtils';
+import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export default function ProjectApprovalDetailScreen({ navigation, route }) {
-    const modificationId = route?.params?.modificationId || 'MOD001';
-    const modification = pendingModifications.find(m => m.id === modificationId);
+    const { user: currentUser } = useAuth();
+    const modificationId = route?.params?.modificationId;
+    const [modification, setModification] = useState(route?.params?.modification || null);
+    const [investors, setInvestors] = useState([]);
+    const [isLoading, setIsLoading] = useState(!modification);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                let resolvedModification = modification;
+                if (!modification && modificationId) {
+                    const mods = await api.getModifications();
+                    const found = (mods || []).find(m => (m._id || m.id) === modificationId);
+                    setModification(found);
+                    resolvedModification = found;
+                }
+
+                const modProjectId = (resolvedModification?.projectId || resolvedModification?.project?._id || resolvedModification?.project || '').toString();
+                let users = [];
+                if (modProjectId) {
+                    try {
+                        const project = await api.getProjectById(modProjectId);
+                        users = (project?.investors || []).map((inv) => inv.user).filter(Boolean);
+                    } catch {
+                        users = [];
+                    }
+                } else {
+                    users = await api.getUsers().catch(() => []);
+                }
+                setInvestors(users || []);
+            } catch (err) {
+                console.error('Failed to load modification details:', err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchData();
+    }, [modificationId]);
+
+    if (isLoading) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.errorContainer}>
+                    <ActivityIndicator size="large" color={theme.colors.primary} />
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     if (!modification) {
         return (
@@ -29,22 +78,27 @@ export default function ProjectApprovalDetailScreen({ navigation, route }) {
     }
 
     const daysRemaining = getDaysRemaining(modification.deadline);
-    const approvedCount = modification.votes.approved;
-    const totalCount = modification.votes.total;
+    const approvedCount = modification.votes?.approved || 0;
+    const totalCount = modification.votes?.total || 1;
     const progressPercent = (approvedCount / totalCount) * 100;
-    const needsMyVote = !modification.myVote;
+    const currentUserId = currentUser?._id || currentUser?.id;
+    const votesMap = modification.votesMap || {};
+    // Check if current user has already voted (by key match or by user field inside vote)
+    const myVoteStatus = votesMap[currentUserId]?.status ||
+        Object.values(votesMap).find(v => String(v?.user || '') === String(currentUserId))?.status;
+    const isAlreadyApproved = modification.status === 'approved';
+    const needsMyVote = !myVoteStatus && !isAlreadyApproved;
 
     // Get investor details for each approval
     const getInvestorApprovalDetails = () => {
-        if (!modification.investorApprovals) return [];
-
-        return Object.entries(modification.investorApprovals).map(([investorId, approval]) => {
-            const investor = investors.find(i => i.id === investorId);
+        const sourceApprovals = modification.investorApprovals || modification.votesMap || {};
+        return Object.entries(sourceApprovals).map(([investorId, approval]) => {
+            const investor = investors.find(i => (i._id || i.id) === investorId);
             return {
                 ...approval,
                 investorId,
                 investor,
-                isCurrentUser: investorId === currentUser.id,
+                isCurrentUser: investorId === currentUserId,
                 isCreator: investorId === modification.proposedBy,
             };
         }).sort((a, b) => {
@@ -63,40 +117,31 @@ export default function ProjectApprovalDetailScreen({ navigation, route }) {
         const action = voteType === 'approve' ? 'approve' : 'reject';
         Alert.alert(
             `${voteType === 'approve' ? 'Approve' : 'Reject'} Modification`,
-            `Are you sure you want to ${action} this modification?`,
+            `Are you sure you want to ${action} this modification ? `,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
                     text: voteType === 'approve' ? 'Approve' : 'Reject',
                     style: voteType === 'approve' ? 'default' : 'destructive',
-                    onPress: () => {
-                        // ✅ Actually update the mock data
-                        modification.myVote = voteType === 'approve' ? 'approved' : 'rejected';
-
-                        // Update votes count
-                        if (voteType === 'approve') {
-                            modification.votes.approved += 1;
-                            modification.votes.pending -= 1;
-                        } else {
-                            modification.votes.rejected = (modification.votes.rejected || 0) + 1;
-                            modification.votes.pending -= 1;
+                    onPress: async () => {
+                        try {
+                            const modId = modification._id || modification.id;
+                            if (voteType === 'approve') {
+                                await api.approveRequest(modId);
+                            } else {
+                                await api.rejectRequest(modId, 'Rejected by investor');
+                            }
+                            Alert.alert(
+                                voteType === 'approve' ? '✅ Vote Recorded' : '❌ Vote Recorded',
+                                voteType === 'approve'
+                                    ? 'Your approval has been recorded.'
+                                    : 'Your rejection has been recorded.',
+                                [{ text: 'OK', onPress: () => navigation.goBack() }]
+                            );
+                        } catch (err) {
+                            console.error('Vote failed:', err);
+                            Alert.alert('Error', err.friendlyMessage || 'Failed to submit vote.');
                         }
-
-                        // Update investor approvals
-                        if (modification.investorApprovals && modification.investorApprovals[currentUser.id]) {
-                            modification.investorApprovals[currentUser.id].status = voteType === 'approve' ? 'approved' : 'rejected';
-                            modification.investorApprovals[currentUser.id].votedAt = new Date().toISOString();
-                        }
-
-                        const remainingApprovals = modification.votes.pending;
-
-                        Alert.alert(
-                            voteType === 'approve' ? '✅ Vote Recorded' : '❌ Vote Recorded',
-                            voteType === 'approve'
-                                ? `Your approval has been recorded.${remainingApprovals > 0 ? ` ${remainingApprovals} more approval${remainingApprovals !== 1 ? 's' : ''} needed.` : ' All approvals complete!'}`
-                                : 'Your rejection has been recorded.',
-                            [{ text: 'OK', onPress: () => navigation.goBack() }]
-                        );
                     }
                 }
             ]
@@ -168,7 +213,9 @@ export default function ProjectApprovalDetailScreen({ navigation, route }) {
                                     </View>
                                 </View>
                                 <Text style={styles.approvalTime}>
-                                    {approval.votedAt ? getRelativeTime(approval.votedAt) : 'Awaiting vote'}
+                                    {approval.votedAt || approval.date
+                                        ? getRelativeTime(approval.votedAt || approval.date)
+                                        : 'Awaiting vote'}
                                 </Text>
                             </View>
                         </View>
@@ -292,7 +339,7 @@ export default function ProjectApprovalDetailScreen({ navigation, route }) {
                                     colors={['#10B981', '#059669']}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 1, y: 0 }}
-                                    style={[styles.progressFill, { width: `${progressPercent}%` }]}
+                                    style={[styles.progressFill, { width: `${progressPercent}% ` }]}
                                 />
                             </View>
                         </View>
@@ -357,6 +404,7 @@ ProjectApprovalDetailScreen.propTypes = {
     route: PropTypes.shape({
         params: PropTypes.shape({
             modificationId: PropTypes.string,
+            modification: PropTypes.object,
         }),
     }),
 };

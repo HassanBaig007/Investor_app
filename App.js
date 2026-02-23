@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // Context
-import { AuthProvider } from './src/context/AuthContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 
 // Services
 import NotificationService from './src/services/notificationService';
@@ -30,22 +31,23 @@ import ProjectDetailScreen from './src/screens/investor/ProjectDetailScreen';
 import DailyExpensesScreen from './src/screens/expenses/DailyExpensesScreen';
 import ExpenseAnalyticsScreen from './src/screens/expenses/ExpenseAnalyticsScreen';
 
+// Admin Screens
+import AdminDashboard from './src/screens/admin/AdminDashboard';
+import CreateProjectScreen from './src/screens/admin/CreateProjectScreen';
+import AddInvestorScreen from './src/screens/admin/AddInvestorScreen';
+import AnnouncementsScreen from './src/screens/admin/AnnouncementsScreen';
+
 // Shared Screens
 import ProfileScreen from './src/screens/shared/ProfileScreen';
 import SettingsScreen from './src/screens/shared/SettingsScreen';
 import NotificationScreen from './src/screens/shared/NotificationScreen';
-import { setCurrentUserId as setGlobalUser } from './src/data/mockData';
 
 const Stack = createNativeStackNavigator();
 
-// Storage key for onboarding status
-const ONBOARDING_KEY_PREFIX = 'splitflow_onboarded_';
-
-export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [hasOnboarded, setHasOnboarded] = useState(true); // Default to true to prevent flash
-  const [currentUserId, setCurrentUserId] = useState('USR001');
-  const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(false);
+function RootNavigator() {
+  const { isAuthenticated, isOnboarded, login, logout, completeOnboarding, user } = useAuth();
+  const userRole = user?.role || 'investor';
+  const isAdminUser = ['admin', 'super_admin', 'project_admin'].includes(userRole);
 
   // Initialize notifications on app start
   useEffect(() => {
@@ -69,148 +71,164 @@ export default function App() {
 
     initNotifications();
 
-    // Cleanup on unmount
     return () => {
       NotificationService.removeListeners();
     };
   }, []);
 
-  // Check onboarding status for user
-  const checkOnboardingStatus = async (userId) => {
-    try {
-      const key = `${ONBOARDING_KEY_PREFIX}${userId}`;
-      const hasCompletedOnboarding = await AsyncStorage.getItem(key);
-      return hasCompletedOnboarding === 'true';
-    } catch (error) {
-      console.log('Error checking onboarding status:', error);
-      return true; // Default to completed on error
+  const renderScreens = () => {
+    if (!isAuthenticated) {
+      return (
+        <>
+          <Stack.Screen name="Login">
+            {(props) => <LoginScreen {...props} onLogin={login} />}
+          </Stack.Screen>
+          <Stack.Screen name="SignUp">
+            {(props) => <SignUpScreen {...props} onLogin={login} />}
+          </Stack.Screen>
+        </>
+      );
     }
-  };
 
-  // Save onboarding completion
-  const saveOnboardingComplete = async (userId) => {
-    try {
-      const key = `${ONBOARDING_KEY_PREFIX}${userId}`;
-      await AsyncStorage.setItem(key, 'true');
-    } catch (error) {
-      console.log('Error saving onboarding status:', error);
+    if (!isOnboarded) {
+      return (
+        <Stack.Screen name="Onboarding">
+          {(props) => <OnboardingScreen {...props} onComplete={completeOnboarding} />}
+        </Stack.Screen>
+      );
     }
-  };
 
-  const handleLogin = async (userId = 'USR001') => {
-    setGlobalUser(userId); // Update global mock data state
-    setCurrentUserId(userId);
-    setIsCheckingOnboarding(true);
+    return (
+      <>
+        {/* Dashboards */}
+        <Stack.Screen name="InvestorDashboard">
+          {(props) => <InvestorDashboard {...props} onLogout={logout} />}
+        </Stack.Screen>
+        <Stack.Screen name="AdminDashboard">
+          {(props) => <AdminDashboard {...props} onLogout={logout} />}
+        </Stack.Screen>
 
-    // Check if user has already completed onboarding
-    const alreadyOnboarded = await checkOnboardingStatus(userId);
-    setHasOnboarded(alreadyOnboarded);
-    setIsCheckingOnboarding(false);
-    setIsLoggedIn(true);
-  };
+        {/* Admin Modules — only available to admin roles */}
+        {isAdminUser && (
+              <>
+                <Stack.Screen
+                  name="CreateProject"
+                  component={CreateProjectScreen}
+                  options={{ animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="AddInvestor"
+                  component={AddInvestorScreen}
+                  options={{ animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="Announcements"
+                  component={AnnouncementsScreen}
+                  options={{ animation: 'slide_from_bottom' }}
+                />
+              </>
+            )}
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setHasOnboarded(true); // Reset to true to prevent flash on next login
-  };
+            {/* Client Modules */}
+            <Stack.Screen
+              name="Reports"
+              component={ReportsScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="Approvals"
+              component={ApprovalsScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="PortfolioAnalytics"
+              component={PortfolioAnalyticsScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
 
-  const handleOnboardingComplete = async () => {
-    await saveOnboardingComplete(currentUserId);
-    setHasOnboarded(true);
-  };
+            {/* Investor Modules */}
+            <Stack.Screen
+              name="CreateProjectInvestor"
+              component={CreateProjectInvestorScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="ManageProjectInvestors"
+              component={ManageProjectInvestorsScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="ProjectDetail"
+              component={ProjectDetailScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="ProjectApprovalDetail"
+              component={ProjectApprovalDetailScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
 
-  return (
-    <AuthProvider>
-      <SafeAreaProvider>
+            {/* Shared Modules */}
+            <Stack.Screen name="Profile">
+              {(props) => <ProfileScreen {...props} onLogout={logout} />}
+            </Stack.Screen>
+            <Stack.Screen
+              name="Notifications"
+              component={NotificationScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+
+            {/* Expense Modules */}
+            <Stack.Screen
+              name="DailyExpenses"
+              component={DailyExpensesScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="ExpenseAnalytics"
+              component={ExpenseAnalyticsScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+          </>
+        );
+      };
+
+      return (
         <NavigationContainer>
-          <StatusBar style="auto" />
+          <StatusBar barStyle="dark-content" />
           <Stack.Navigator
             screenOptions={{
               headerShown: false,
               animation: 'slide_from_right',
             }}
           >
-            {!isLoggedIn ? (
-              <>
-                <Stack.Screen name="Login">
-                  {(props) => <LoginScreen {...props} onLogin={handleLogin} />}
-                </Stack.Screen>
-                <Stack.Screen name="SignUp">
-                  {(props) => <SignUpScreen {...props} onLogin={handleLogin} />}
-                </Stack.Screen>
-              </>
-            ) : !hasOnboarded ? (
-              <Stack.Screen name="Onboarding">
-                {(props) => <OnboardingScreen {...props} onComplete={handleOnboardingComplete} />}
-              </Stack.Screen>
-            ) : (
-              <>
-                <Stack.Screen name="InvestorDashboard">
-                  {(props) => <InvestorDashboard {...props} onLogout={handleLogout} />}
-                </Stack.Screen>
-                <Stack.Screen
-                  name="Reports"
-                  component={ReportsScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                  name="Approvals"
-                  component={ApprovalsScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                  name="PortfolioAnalytics"
-                  component={PortfolioAnalyticsScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                  name="CreateProjectInvestor"
-                  component={CreateProjectInvestorScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                  name="ManageProjectInvestors"
-                  component={ManageProjectInvestorsScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                  name="ProjectDetail"
-                  component={ProjectDetailScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                  name="ProjectApprovalDetail"
-                  component={ProjectApprovalDetailScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen name="Profile">
-                  {(props) => <ProfileScreen {...props} onLogout={handleLogout} />}
-                </Stack.Screen>
-                <Stack.Screen
-                  name="Notifications"
-                  component={NotificationScreen}
-                  options={{ animation: 'slide_from_right' }}
-                />
-                <Stack.Screen
-                  name="Settings"
-                  component={SettingsScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                  name="DailyExpenses"
-                  component={DailyExpensesScreen}
-                  options={{ animation: 'slide_from_bottom' }}
-                />
-                <Stack.Screen
-                  name="ExpenseAnalytics"
-                  component={ExpenseAnalyticsScreen}
-                  options={{ animation: 'slide_from_right' }}
-                />
-              </>
-            )}
+            {renderScreens()}
           </Stack.Navigator>
         </NavigationContainer>
+      );
+}
+
+// Components
+import ErrorBoundary from './src/components/ErrorBoundary';
+
+export default function App() {
+  useEffect(() => {
+    Ionicons.loadFont();
+    MaterialCommunityIcons.loadFont();
+  }, []);
+
+  return (
+    <AuthProvider>
+      <SafeAreaProvider>
+        <ErrorBoundary>
+          <RootNavigator />
+        </ErrorBoundary>
       </SafeAreaProvider>
-    </AuthProvider >
+    </AuthProvider>
   );
 }

@@ -4,32 +4,36 @@ import {
     View,
     Text,
     ScrollView,
+    SectionList,
     StyleSheet,
     TouchableOpacity,
     StatusBar,
     Alert,
     Dimensions,
     Animated,
+    Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme, formatCurrency, getStatusColor, getStatusBgColor } from '../../components/Theme';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import ProfileMenu from '../../components/ProfileMenu';
 
 // Import from centralized data
-import { adminKPIs, projects, pendingApprovals, getRelativeTime } from '../../data/mockData';
+import { getRelativeTime } from '../../utils/dateTimeUtils';
 import { api } from '../../services/api';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const DASHBOARD_MARKET_PRICE_CAP = 5;
+const DASHBOARD_NEWS_CAP = 3;
+const MODAL_MARKET_PRICE_INITIAL_CAP = 6;
 
 // KPICard component moved outside AdminDashboard to avoid nested component definition
-const KPICard = ({ icon, label, value, color, delay, fadeAnim }) => (
+const KPICard = ({ icon, label, value, color }) => (
     <Animated.View
         style={[
             styles.kpiCard,
             {
-                opacity: fadeAnim,
                 transform: [{ translateY: new Animated.Value(0) }]
             }
         ]}
@@ -42,28 +46,66 @@ const KPICard = ({ icon, label, value, color, delay, fadeAnim }) => (
     </Animated.View>
 );
 
+const getTrendColor = (trend) => {
+    if (typeof trend !== 'string') return theme.colors.secondary;
+    if (trend.startsWith('+')) return theme.colors.success;
+    if (trend.startsWith('-')) return theme.colors.danger;
+    return theme.colors.secondary;
+};
+
 KPICard.propTypes = {
     icon: PropTypes.string.isRequired,
     label: PropTypes.string.isRequired,
     value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
     color: PropTypes.string.isRequired,
-    delay: PropTypes.number,
-    fadeAnim: PropTypes.object,
 };
 
 export default function AdminDashboard({ navigation, onLogout }) {
-    const [approvals, setApprovals] = useState(pendingApprovals);
+    const [approvals, setApprovals] = useState([]);
     const [activeTab, setActiveTab] = useState('overview');
     const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+    // API-driven state
+    const [adminStats, setAdminStats] = useState(null);
+    const [projects, setProjects] = useState([]);
+    const [showNewsModal, setShowNewsModal] = useState(false);
+    const [marketPrices, setMarketPrices] = useState([]);
+    const [newsItems, setNewsItems] = useState([]);
+    const [marketPricesModalCap, setMarketPricesModalCap] = useState(MODAL_MARKET_PRICE_INITIAL_CAP);
 
     // Animation values
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const headerSlide = useRef(new Animated.Value(-50)).current;
     const kpiScale = useRef(new Animated.Value(0.8)).current;
     const contentSlide = useRef(new Animated.Value(50)).current;
-    const tabAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
+        const fetchAdminData = async () => {
+            try {
+                const [statsData, projectsData, modificationsData] = await Promise.all([
+                    api.getAdminStats(),
+                    api.getProjects(),
+                    api.getModifications().catch(() => []),
+                ]);
+                setAdminStats(statsData);
+                setProjects(projectsData || []);
+                // Pending approvals are modifications with status 'pending'
+                const pending = (modificationsData || []).filter(m => m.status === 'pending');
+                setApprovals(pending);
+
+                const [pricesData, newsData] = await Promise.all([
+                    api.getMarketPrices().catch(() => []),
+                    api.getNews().catch(() => []),
+                ]);
+                setMarketPrices(Array.isArray(pricesData) ? pricesData.filter(Boolean) : []);
+                setNewsItems(Array.isArray(newsData) ? newsData.filter(Boolean) : []);
+            } catch (err) {
+                console.error('Failed to load admin data:', err);
+                Alert.alert('Error', 'Failed to load dashboard data');
+            }
+        };
+        fetchAdminData();
+
         Animated.parallel([
             Animated.timing(fadeAnim, {
                 toValue: 1,
@@ -174,6 +216,15 @@ export default function AdminDashboard({ navigation, onLogout }) {
         setShowProfileMenu(true);
     };
 
+    const openNewsModal = () => {
+        setMarketPricesModalCap(MODAL_MARKET_PRICE_INITIAL_CAP);
+        setShowNewsModal(true);
+    };
+
+    const closeNewsModal = () => {
+        setShowNewsModal(false);
+    };
+
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <StatusBar barStyle="dark-content" />
@@ -226,11 +277,11 @@ export default function AdminDashboard({ navigation, onLogout }) {
                             </View>
                             <View style={styles.aumGrowth}>
                                 <Ionicons name="trending-up" size={14} color="#4ADE80" />
-                                <Text style={styles.aumGrowthText}>+{adminKPIs.monthlyGrowth}%</Text>
+                                <Text style={styles.aumGrowthText}>+{adminStats?.monthlyGrowth || 0}%</Text>
                             </View>
                         </View>
-                        <Text style={styles.aumValue}>{formatCurrency(adminKPIs.totalAUM)}</Text>
-                        <Text style={styles.aumSubtext}>Across {adminKPIs.activeProjects} active projects</Text>
+                        <Text style={styles.aumValue}>{formatCurrency(adminStats?.totalAUM || 0)}</Text>
+                        <Text style={styles.aumSubtext}>Across {adminStats?.activeProjects || 0} active projects</Text>
                     </LinearGradient>
                 </Animated.View>
 
@@ -247,23 +298,20 @@ export default function AdminDashboard({ navigation, onLogout }) {
                     <KPICard
                         icon="briefcase"
                         label="Projects"
-                        value={adminKPIs.activeProjects}
+                        value={adminStats?.activeProjects || 0}
                         color={theme.colors.success}
-                        delay={100}
                     />
                     <KPICard
                         icon="people"
                         label="Investors"
-                        value={adminKPIs.totalInvestors}
+                        value={adminStats?.totalInvestors || 0}
                         color={theme.colors.info}
-                        delay={200}
                     />
                     <KPICard
                         icon="time"
                         label="Pending"
                         value={approvals.length}
                         color={approvals.length > 0 ? theme.colors.warning : theme.colors.success}
-                        delay={300}
                     />
                 </Animated.View>
 
@@ -364,6 +412,59 @@ export default function AdminDashboard({ navigation, onLogout }) {
                                         <Text style={styles.activityTime}>Yesterday</Text>
                                     </View>
                                 </View>
+                            </View>
+
+                            <View style={styles.marketNewsSection}>
+                                <View style={styles.marketNewsHeader}>
+                                    <View style={styles.marketNewsTitleRow}>
+                                        <LinearGradient
+                                            colors={['#00C853', '#00A844']}
+                                            style={styles.marketNewsIconGradient}
+                                        >
+                                            <Ionicons name="leaf" size={18} color="white" />
+                                        </LinearGradient>
+                                        <Text style={styles.sectionTitle}>Market News</Text>
+                                    </View>
+                                    <TouchableOpacity style={styles.viewAllBtn} onPress={openNewsModal}>
+                                        <Text style={styles.viewAllText}>View All</Text>
+                                        <Ionicons name="chevron-forward" size={16} color={theme.colors.primary} />
+                                    </TouchableOpacity>
+                                </View>
+
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pricesScroll} contentContainerStyle={{ paddingHorizontal: 0 }}>
+                                    {marketPrices.slice(0, DASHBOARD_MARKET_PRICE_CAP).map((item, index) => (
+                                        <View key={item?._id || item?.id || `${item?.name || 'price'}-${index}`} style={[styles.priceCard, { borderColor: (item?.color || theme.colors.primary) + '40' }]}>
+                                            <View style={[styles.priceCardIcon, { backgroundColor: (item?.color || theme.colors.primary) + '20' }]}>
+                                                <Ionicons name="trending-up" size={20} color={item?.color || theme.colors.primary} />
+                                            </View>
+                                            <Text style={styles.priceCardName}>{item?.name || 'Market Item'}</Text>
+                                            <View style={styles.priceCardRow}>
+                                                <Text style={styles.priceCardValue}>{item?.price || '-'}</Text>
+                                                <Text style={[styles.priceCardTrend, { color: item?.positive ? theme.colors.success : theme.colors.danger }]}>
+                                                    {item?.trend || '--'}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    ))}
+                                </ScrollView>
+
+                                {newsItems.slice(0, DASHBOARD_NEWS_CAP).map((news, index) => (
+                                    <TouchableOpacity key={news?._id || news?.id || `${news?.title || 'news'}-${index}`} style={styles.newsItemCard} onPress={openNewsModal}>
+                                        <View style={styles.newsItemIcon}>
+                                            <Ionicons name="newspaper-outline" size={20} color={theme.colors.secondary} />
+                                        </View>
+                                        <View style={styles.newsItemContent}>
+                                            <Text style={styles.newsItemTitle}>{news?.title || 'Market update'}</Text>
+                                            <View style={styles.newsItemMeta}>
+                                                <View style={styles.newsItemBadge}>
+                                                    <Text style={styles.newsItemBadgeText}>{news?.category || 'Update'}</Text>
+                                                </View>
+                                                <Text style={styles.newsItemTime}>{news?.time || 'Now'}</Text>
+                                            </View>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
+                                    </TouchableOpacity>
+                                ))}
                             </View>
                         </View>
                     )}
@@ -509,6 +610,110 @@ export default function AdminDashboard({ navigation, onLogout }) {
                 onLogout={onLogout}
                 userName="Admin"
             />
+
+            <Modal visible={showNewsModal} animationType="slide">
+                <View style={styles.newsModalContainer}>
+                    <View style={styles.newsModalHeader}>
+                        <View style={styles.newsModalTitleRow}>
+                            <LinearGradient colors={['#00C853', '#00A844']} style={styles.newsModalIcon}>
+                                <Ionicons name="leaf" size={24} color="white" />
+                            </LinearGradient>
+                            <View>
+                                <Text style={styles.newsModalTitle}>Agriculture News</Text>
+                                <Text style={styles.newsModalSubtitle}>Market prices & updates</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity style={styles.newsModalClose} onPress={closeNewsModal}>
+                            <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    <SectionList
+                        style={{ flex: 1 }}
+                        contentContainerStyle={{ paddingBottom: 40 }}
+                        stickySectionHeadersEnabled={true}
+                        sections={[{ title: 'Latest News', data: newsItems }]}
+                        keyExtractor={(item, index) => item?._id || item?.id || `${item?.title || 'news'}-${index}`}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={true}
+                        bounces={true}
+                        overScrollMode="always"
+                        ListHeaderComponent={
+                            <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 }}>
+                                <View style={styles.livePricesSection}>
+                                    <View style={styles.livePricesHeader}>
+                                        <View style={styles.liveIndicator} />
+                                        <Text style={styles.livePricesTitle}>Live Market Prices</Text>
+                                    </View>
+                                    <View style={styles.pricesTable}>
+                                        {marketPrices.slice(0, marketPricesModalCap).map((item, index) => (
+                                            <View key={item?._id || item?.id || `${item?.name || 'price'}-${index}`} style={styles.priceTableRow}>
+                                                <Text style={styles.priceTableName}>{item?.name || 'Market Item'}</Text>
+                                                <Text style={styles.priceTableValue}>{item?.price || '-'}</Text>
+                                                <View style={[styles.priceTableChange, { backgroundColor: item?.positive ? '#D1FAE5' : '#FEE2E2' }]}>
+                                                    <Text style={[styles.priceTableChangeText, { color: item?.positive ? theme.colors.success : theme.colors.danger }]}>
+                                                        {item?.trend || '--'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        ))}
+                                    </View>
+                                    {marketPrices.length > MODAL_MARKET_PRICE_INITIAL_CAP && marketPricesModalCap <= MODAL_MARKET_PRICE_INITIAL_CAP && (
+                                        <TouchableOpacity
+                                            style={styles.modalViewMoreBtn}
+                                            onPress={() => setMarketPricesModalCap(marketPrices.length)}
+                                        >
+                                            <Text style={styles.modalViewMoreText}>View More</Text>
+                                            <Ionicons name="chevron-down" size={16} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                    )}
+                                    {marketPrices.length > MODAL_MARKET_PRICE_INITIAL_CAP && marketPricesModalCap > MODAL_MARKET_PRICE_INITIAL_CAP && (
+                                        <TouchableOpacity
+                                            style={styles.modalViewMoreBtn}
+                                            onPress={() => setMarketPricesModalCap(MODAL_MARKET_PRICE_INITIAL_CAP)}
+                                        >
+                                            <Text style={styles.modalViewMoreText}>Show Less</Text>
+                                            <Ionicons name="chevron-up" size={16} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            </View>
+                        }
+                        renderSectionHeader={() => (
+                            <View style={{
+                                paddingHorizontal: 20,
+                                paddingTop: 12,
+                                paddingBottom: 10,
+                                backgroundColor: theme.colors.background,
+                                borderBottomWidth: 1,
+                                borderBottomColor: theme.colors.border,
+                            }}>
+                                <Text style={styles.newsListTitle}>Latest News</Text>
+                            </View>
+                        )}
+                        renderItem={({ item }) => (
+                            <View style={[styles.newsCard, { marginHorizontal: 20 }]}>
+                                <View style={styles.newsCardHeader}>
+                                    <View style={styles.newsCardBadge}>
+                                        <Text style={styles.newsCardBadgeText}>{item?.category || 'Update'}</Text>
+                                    </View>
+                                    <Text style={[styles.newsCardTrend, { color: getTrendColor(item?.trend) }]}>
+                                        {item?.trend || item?.time || 'Update'}
+                                    </Text>
+                                </View>
+                                <Text style={styles.newsCardTitle}>{item?.title || 'Market update'}</Text>
+                                <Text style={styles.newsCardDesc}>{item?.description || item?.time || 'No details available.'}</Text>
+                            </View>
+                        )}
+                        ListEmptyComponent={
+                            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                                <Ionicons name="newspaper-outline" size={48} color={theme.colors.textTertiary} />
+                                <Text style={{ color: theme.colors.textSecondary, marginTop: 12, fontSize: 15 }}>No news available</Text>
+                            </View>
+                        }
+                    />
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -570,6 +775,25 @@ const styles = StyleSheet.create({
         padding: theme.spacing.l,
         borderRadius: theme.borderRadius.xl,
         ...theme.shadows.glow,
+        overflow: 'hidden',
+    },
+    aumDecor1: {
+        position: 'absolute',
+        top: -30,
+        right: -30,
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+    },
+    aumDecor2: {
+        position: 'absolute',
+        bottom: -20,
+        left: -20,
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: 'rgba(255,255,255,0.05)',
     },
     aumHeader: {
         flexDirection: 'row',
@@ -580,6 +804,11 @@ const styles = StyleSheet.create({
     aumLabel: {
         ...theme.typography.small,
         color: 'rgba(255,255,255,0.7)',
+        marginLeft: 6,
+    },
+    aumLabelContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     aumGrowth: {
         flexDirection: 'row',
@@ -949,5 +1178,288 @@ const styles = StyleSheet.create({
         ...theme.typography.bodyMedium,
         color: theme.colors.primary,
         marginLeft: theme.spacing.s,
+    },
+    marketNewsSection: {
+        marginTop: theme.spacing.l,
+    },
+    marketNewsHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 14,
+    },
+    marketNewsTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    marketNewsIconGradient: {
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    viewAllBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    viewAllText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: theme.colors.primary,
+    },
+    pricesScroll: {
+        marginBottom: 12,
+    },
+    priceCard: {
+        width: 128,
+        padding: 14,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 14,
+        marginRight: 12,
+        borderWidth: 1,
+    },
+    priceCardIcon: {
+        width: 38,
+        height: 38,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10,
+    },
+    priceCardName: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: theme.colors.textPrimary,
+        marginBottom: 4,
+    },
+    priceCardRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    priceCardValue: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+    },
+    priceCardTrend: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    newsItemCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.surface,
+        padding: 14,
+        borderRadius: 14,
+        marginBottom: 10,
+    },
+    newsItemIcon: {
+        width: 42,
+        height: 42,
+        borderRadius: 12,
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    newsItemContent: {
+        flex: 1,
+    },
+    newsItemTitle: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: theme.colors.textPrimary,
+        marginBottom: 4,
+    },
+    newsItemMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    newsItemBadge: {
+        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    newsItemBadgeText: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: theme.colors.primary,
+    },
+    newsItemTime: {
+        fontSize: 11,
+        color: theme.colors.textTertiary,
+    },
+    newsModalContainer: {
+        flex: 1,
+        backgroundColor: theme.colors.background,
+    },
+    newsModalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 20,
+        paddingTop: 50,
+        backgroundColor: theme.colors.surface,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
+    },
+    newsModalTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    newsModalIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    newsModalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: theme.colors.textPrimary,
+    },
+    newsModalSubtitle: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+    },
+    newsModalClose: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: theme.colors.background,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    newsModalList: {
+        flex: 1,
+        padding: 20,
+    },
+    newsModalListContent: {
+        paddingBottom: 40,
+    },
+    livePricesSection: {
+        backgroundColor: theme.colors.surface,
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 20,
+    },
+    livePricesHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 16,
+    },
+    liveIndicator: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: theme.colors.success,
+    },
+    livePricesTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: theme.colors.textPrimary,
+    },
+    pricesTable: {
+        gap: 8,
+    },
+    priceTableRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
+    },
+    priceTableName: {
+        flex: 1,
+        fontSize: 14,
+        color: theme.colors.textPrimary,
+    },
+    priceTableValue: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: theme.colors.textPrimary,
+        marginRight: 12,
+    },
+    priceTableChange: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    priceTableChangeText: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    modalViewMoreBtn: {
+        marginTop: 12,
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: 'rgba(91, 92, 255, 0.1)',
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        paddingVertical: 7,
+    },
+    modalViewMoreText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: theme.colors.primary,
+    },
+    newsStickyHeader: {
+        backgroundColor: theme.colors.background,
+        paddingTop: 4,
+        paddingBottom: 8,
+    },
+    newsListTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: theme.colors.textPrimary,
+        marginBottom: 8,
+    },
+    newsCard: {
+        backgroundColor: theme.colors.surface,
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+    },
+    newsCardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    newsCardBadge: {
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    newsCardBadgeText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: theme.colors.secondary,
+    },
+    newsCardTrend: {
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    newsCardTitle: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: theme.colors.textPrimary,
+        marginBottom: 4,
+    },
+    newsCardDesc: {
+        fontSize: 13,
+        color: theme.colors.textSecondary,
+        lineHeight: 20,
     },
 });

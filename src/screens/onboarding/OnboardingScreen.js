@@ -9,8 +9,8 @@ import {
     FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme } from '../../components/Theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -93,8 +93,8 @@ export default function OnboardingScreen({ onComplete }) {
 
             {/* Tips Card */}
             <View style={styles.tipsCard}>
-                {item.tips.map((tip, i) => (
-                    <View key={i} style={styles.tipRow}>
+                {item.tips.map((tip) => (
+                    <View key={`${tip.icon}-${tip.text}`} style={styles.tipRow}>
                         <View style={styles.tipIcon}>
                             <MaterialCommunityIcons name={tip.icon} size={18} color={theme.colors.primary} />
                         </View>
@@ -136,9 +136,9 @@ export default function OnboardingScreen({ onComplete }) {
             <View style={styles.footer}>
                 {/* Pagination */}
                 <View style={styles.pagination}>
-                    {ONBOARDING_SLIDES.map((_, index) => (
+                    {ONBOARDING_SLIDES.map((slide, index) => (
                         <View
-                            key={index}
+                            key={slide.id}
                             style={[styles.dot, index === currentIndex && styles.dotActive]}
                         />
                     ))}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import {
     View,
@@ -11,31 +11,91 @@ import {
     Switch,
     KeyboardAvoidingView,
     Platform,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme, formatCurrency } from '../../components/Theme';
-import { projects, investors, getCurrentUser, pendingModifications } from '../../data/mockData';
-import { getVisibleInvestorData, updatePrivacySettings, PRIVACY_LEVELS } from '../../utils/privacyUtils';
+import { api } from '../../services/api';
 import NotificationService from '../../services/notificationService';
+import { useAuth } from '../../context/AuthContext';
 
 export default function ManageProjectInvestorsScreen({ navigation, route }) {
-    const projectId = route?.params?.projectId || 'PRJ002';
-    const project = projects.find(p => p.id === projectId);
+    const projectId = route?.params?.projectId;
+    const [project, setProject] = useState(null);
+    const [allUsers, setAllUsers] = useState([]);
+    const [modifications, setModifications] = useState([]);
+    const [isDataLoading, setIsDataLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [showPrivacySettings, setShowPrivacySettings] = useState(false);
-    // Force update state to handle mock data mutations
     const [lastUpdate, setLastUpdate] = useState(Date.now());
 
     // Dynamic current user
-    const currentUser = getCurrentUser();
+    const { user: currentUser } = useAuth();
 
-    // Current user's privacy state for this project (for demo, track locally)
-    const currentUserInvestor = investors.find(i => i.id === currentUser.id);
-    const currentPrivacy = currentUserInvestor?.privacySettings?.[projectId] || {};
-    const [isAnonymous, setIsAnonymous] = useState(currentPrivacy.isAnonymous || false);
+    const getRefId = (value) => {
+        if (!value) return null;
+        if (typeof value === 'string') return value;
+        if (value._id) return String(value._id);
+        if (value.id) return String(value.id);
+        return null;
+    };
+
+    // Current user's privacy state
+    const [isAnonymous, setIsAnonymous] = useState(false);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            setIsDataLoading(true);
+            try {
+                const [projectsData, modsData] = await Promise.all([
+                    api.getProjects(),
+                    api.getModifications().catch(() => []),
+                ]);
+                const found = (projectsData || []).find(
+                    (p) => String(getRefId(p)) === String(projectId)
+                );
+
+                let usersData = [];
+                try {
+                    usersData = await api.getProjectInviteCandidates(projectId);
+                } catch {
+                    usersData = await api.getUsers().catch(() => []);
+                }
+
+                setProject(found || null);
+                setAllUsers(usersData || []);
+                setModifications((modsData || []).filter(m => {
+                    const modProjectId = getRefId(m.projectId || m.project);
+                    return String(modProjectId) === String(projectId);
+                }));
+
+                // Extract current user's privacy settings from project
+                const userId = getRefId(currentUser);
+                const myInvestor = found?.investors?.find(
+                    (inv) => String(getRefId(inv.user)) === String(userId)
+                );
+                setIsAnonymous(myInvestor?.privacySettings?.isAnonymous || false);
+            } catch (err) {
+                console.error('Failed to load project data:', err);
+            } finally {
+                setIsDataLoading(false);
+            }
+        };
+        fetchData();
+    }, [projectId, lastUpdate]);
+
+    if (isDataLoading) {
+        return (
+            <SafeAreaView style={styles.container}>
+                <View style={styles.errorContainer}>
+                    <ActivityIndicator size="large" color={theme.colors.primary} />
+                </View>
+            </SafeAreaView>
+        );
+    }
 
     if (!project) {
         return (
@@ -47,17 +107,43 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
         );
     }
 
-    const isAdmin = project.projectAdmins.includes(currentUser.id);
-    const isCreator = project.createdBy === currentUser.id;
-    const isUserInvestor = project.projectInvestors.includes(currentUser.id);
+    // Roles check with null guards
+    const userId = getRefId(currentUser);
+    const creatorId = getRefId(project.createdBy);
+    const isAdmin = ['super_admin', 'project_admin', 'admin'].includes(currentUser?.role);
+    const isCreator = String(creatorId) === String(userId);
+    const isUserInvestor = project.investors?.some(
+        (inv) => String(getRefId(inv.user)) === String(userId)
+    );
 
-    // Get investors with privacy filtering applied
-    const projectInvestors = investors
-        .filter(i => project.projectInvestors.includes(i.id))
-        .map(investor => getVisibleInvestorData(investor, projectId, currentUser.id, isAdmin));
+    // Get investors with privacy filtering by mapping from project.investors + allUsers
+    const projectInvestorIds = new Set(
+        (project.investors || [])
+            .map((inv) => String(getRefId(inv.user)))
+            .filter(Boolean)
+    );
+    const projectInvestors = (project.investors || [])
+        .filter(inv => inv?.user?.role !== 'super_admin')
+        .map(inv => {
+            const invUserId = getRefId(inv.user);
+            const userData = inv.user?.name
+                ? inv.user
+                : allUsers.find((u) => String(getRefId(u)) === String(invUserId));
+            return {
+                id: invUserId,
+                _id: invUserId,
+                name: userData?.name || 'Unknown',
+                email: userData?.email || '',
+                role: inv.role || 'active',
+                investedAmount: inv.investedAmount || 0,
+                privacySettings: inv.privacySettings || {},
+            };
+        });
 
-    const availableInvestors = investors.filter(i => !project.projectInvestors.includes(i.id));
-    const projectModifications = pendingModifications.filter(m => m.projectId === projectId);
+    const availableInvestors = allUsers.filter(
+        (u) => !projectInvestorIds.has(String(getRefId(u))) && u?.role !== 'super_admin'
+    );
+    const projectModifications = modifications;
 
     // Ensure pendingInvitations exists
     if (!project.pendingInvitations) {
@@ -66,48 +152,41 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
 
     // Check if a user is already invited
     const isUserInvited = (userId) => {
-        return project.pendingInvitations.some(inv => inv.userId === userId);
+        return project.pendingInvitations.some(
+            (inv) => {
+                const invUserId = inv.userId?._id || inv.userId?.id || inv.userId;
+                return String(invUserId) === String(userId);
+            }
+        );
     };
 
-    // State for selected member options modal
-    const [selectedMember, setSelectedMember] = useState(null);
-    const [showMemberOptions, setShowMemberOptions] = useState(false);
+
 
     // Helper: invite member with specific role
-    const inviteMemberWithRole = (investor, role) => {
-        // Check if already invited
-        if (isUserInvited(investor.id)) {
-            Alert.alert('Already Invited', `${investor.name} has already been invited to this project.`);
-            return;
+    const inviteMemberWithRole = async (investor, role) => {
+        try {
+            const invId = getRefId(investor);
+            const projId = getRefId(project);
+            await api.inviteUserToProject(projId, invId, role);
+            setLastUpdate(Date.now()); // Refresh data
+
+            NotificationService.sendLocalNotification(
+                'Invitation Sent',
+                `Invitation to join project sent to ${investor.name}`,
+                { type: 'invitation', projectId: projId }
+            );
+
+            const roleLabel = role === 'active' ? 'Active Member' : 'Passive Member';
+            Alert.alert(
+                '✅ Invitation Sent',
+                `${investor.name} has been invited as a ${roleLabel}.`,
+                [{ text: 'OK' }]
+            );
+            setShowAddForm(false);
+        } catch (err) {
+            console.error('Failed to send invitation:', err);
+            Alert.alert('Error', err.response?.data?.message || err.friendlyMessage || 'Failed to send invitation.');
         }
-
-        if (!project.pendingInvitations) {
-            project.pendingInvitations = [];
-        }
-
-        project.pendingInvitations.push({
-            id: `INV${Date.now()}`,
-            userId: investor.id,
-            role: role,
-            invitedBy: currentUser.id,
-            invitedAt: new Date().toISOString(),
-        });
-
-        setLastUpdate(Date.now()); // Force refresh
-
-        NotificationService.sendLocalNotification(
-            'Invitation Sent',
-            `Invitation sent to ${investor.name}`,
-            { type: 'invitation', projectId: project.id }
-        );
-
-        const roleLabel = role === 'active' ? 'Active Member' : 'Passive Member';
-        Alert.alert(
-            '✅ Invitation Sent',
-            `An invitation has been sent to ${investor.name} to join as a ${roleLabel}.\n\nThey must accept the invitation to join the project.`,
-            [{ text: 'OK' }]
-        );
-        setShowAddForm(false);
     };
 
     // Role selection when adding new member
@@ -131,9 +210,10 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
 
     // Show options when clicking existing member
     const handleMemberPress = (investor) => {
-        const isCreatorMember = investor.id === project.createdBy;
-        const isSelfMember = investor.id === currentUser.id;
-        const currentRole = project.investorRoles?.[investor.id] || 'active';
+        const memberId = getRefId(investor);
+        const isCreatorMember = String(memberId) === String(creatorId);
+        const isSelfMember = String(memberId) === String(userId);
+        const currentRole = investor.role || 'active';
 
         // Creator cannot be modified
         if (isCreatorMember) {
@@ -175,20 +255,24 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
     };
 
     // Toggle member role
-    const toggleMemberRole = (investor, currentRole) => {
+    const toggleMemberRole = async (investor, currentRole) => {
         const newRole = currentRole === 'active' ? 'passive' : 'active';
-        if (!project.investorRoles) {
-            project.investorRoles = {};
-        }
-        project.investorRoles[investor.id] = newRole;
-        setLastUpdate(Date.now()); // Force refresh
+        try {
+            const projId = getRefId(project);
+            const memberId = getRefId(investor);
+            await api.updateMemberRole(projId, memberId, newRole);
+            setLastUpdate(Date.now()); // Refresh data
 
-        const roleLabel = newRole === 'active' ? 'Active Member' : 'Passive Member';
-        Alert.alert(
-            '✅ Role Updated',
-            `${investor.name} is now a ${roleLabel}.`,
-            [{ text: 'OK' }]
-        );
+            const roleLabel = newRole === 'active' ? 'Active Member' : 'Passive Member';
+            Alert.alert(
+                '✅ Role Updated',
+                `${investor.name} is now a ${roleLabel}.`,
+                [{ text: 'OK' }]
+            );
+        } catch (err) {
+            console.error('Failed to update role:', err);
+            Alert.alert('Error', err.friendlyMessage || 'Failed to update role.');
+        }
     };
 
     // Remove member from project
@@ -201,16 +285,17 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                 {
                     text: 'Remove',
                     style: 'destructive',
-                    onPress: () => {
-                        const index = project.projectInvestors.indexOf(investor.id);
-                        if (index > -1) {
-                            project.projectInvestors.splice(index, 1);
+                    onPress: async () => {
+                        try {
+                            const projId = getRefId(project);
+                            const memberId = getRefId(investor);
+                            await api.removeInvestor(projId, memberId);
+                            setLastUpdate(Date.now()); // Refresh data
+                            Alert.alert('Removed', `${investor.name} has been removed from the project.`);
+                        } catch (err) {
+                            console.error('Failed to remove member:', err);
+                            Alert.alert('Error', err.friendlyMessage || 'Failed to remove member.');
                         }
-                        if (project.investorRoles?.[investor.id]) {
-                            delete project.investorRoles[investor.id];
-                        }
-                        setLastUpdate(Date.now()); // Force refresh
-                        Alert.alert('Removed', `${investor.name} has been removed from the project.`);
                     },
                 },
             ]
@@ -232,9 +317,16 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
     const renderInvestorCard = (investor, isCreatorMember = false) => {
         const isAnonymousInvestor = investor.visibilityLevel === 'anonymous';
         const showFullAsAdmin = investor.visibilityLevel === 'admin' && investor.isAnonymous;
-        const isSelf = investor.isSelf;
-        const memberRole = project.investorRoles?.[investor.id] || 'active';
+        const memberId = getRefId(investor);
+        const isSelf = String(memberId) === String(userId);
+        const memberRole = investor.role || 'active';
         const canTapToEdit = (isCreator || isAdmin) && !isCreatorMember && !isSelf;
+
+        const getAvatarGradient = () => {
+            if (isCreatorMember) return ['#F59E0B', '#D97706'];
+            if (isSelf) return ['#10B981', '#059669'];
+            return theme.gradients.primary;
+        };
 
         return (
             <TouchableOpacity
@@ -250,7 +342,7 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                     </View>
                 ) : (
                     <LinearGradient
-                        colors={isCreatorMember ? ['#F59E0B', '#D97706'] : isSelf ? ['#10B981', '#059669'] : theme.gradients.primary}
+                        colors={getAvatarGradient()}
                         style={styles.investorAvatar}
                     >
                         <Text style={styles.investorInitials}>
@@ -314,18 +406,18 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
 
                 {/* Stats + Tap indicator */}
                 <View style={styles.investorStats}>
-                    {investor.totalInvested !== null ? (
+                    {investor.totalInvested === null ? (
+                        <View style={styles.hiddenAmount}>
+                            <MaterialCommunityIcons name="eye-off-outline" size={16} color={theme.colors.textTertiary} />
+                            <Text style={styles.investorLabel}>Hidden</Text>
+                        </View>
+                    ) : (
                         <>
                             <Text style={styles.investorAmount} numberOfLines={1}>
                                 {formatCurrency(investor.totalInvested)}
                             </Text>
                             <Text style={styles.investorLabel}>Invested</Text>
                         </>
-                    ) : (
-                        <View style={styles.hiddenAmount}>
-                            <MaterialCommunityIcons name="eye-off-outline" size={16} color={theme.colors.textTertiary} />
-                            <Text style={styles.investorLabel}>Hidden</Text>
-                        </View>
                     )}
                     {canTapToEdit && (
                         <MaterialCommunityIcons name="chevron-right" size={18} color={theme.colors.textTertiary} style={{ marginTop: 4 }} />
@@ -471,7 +563,10 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                         </View>
 
                         {projectInvestors.map((investor) =>
-                            renderInvestorCard(investor, investor.id === project.createdBy)
+                            renderInvestorCard(
+                                investor,
+                                String(investor.id) === String(getRefId(project.createdBy))
+                            )
                         )}
                     </View>
 
@@ -488,7 +583,10 @@ export default function ManageProjectInvestorsScreen({ navigation, route }) {
                             </View>
 
                             {project.pendingInvitations.map((invitation) => {
-                                const invitedUser = investors.find(i => i.id === invitation.userId);
+                                const popUserId = invitation.userId?._id || invitation.userId?.id || invitation.userId;
+                                const invitedUser = invitation.userId?.name ? invitation.userId : allUsers.find(
+                                    (i) => String(getRefId(i)) === String(popUserId)
+                                );
                                 if (!invitedUser) return null;
                                 return (
                                     <View key={invitation.id} style={styles.investorCard}>

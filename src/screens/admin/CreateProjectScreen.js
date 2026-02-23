@@ -13,10 +13,55 @@ import {
     Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme } from '../../components/Theme';
 import { api } from '../../services/api';
+
+const InputField = ({ label, value, onChangeText, placeholder, keyboardType, multiline, required }) => (
+    <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>
+            {label} {required && <Text style={styles.required}>*</Text>}
+        </Text>
+        <TextInput
+            style={[styles.input, multiline && styles.inputMultiline]}
+            value={value}
+            onChangeText={onChangeText}
+            placeholder={placeholder}
+            placeholderTextColor={theme.colors.textTertiary}
+            keyboardType={keyboardType || 'default'}
+            multiline={multiline}
+            numberOfLines={multiline ? 4 : 1}
+        />
+    </View>
+);
+
+InputField.propTypes = {
+    label: PropTypes.string.isRequired,
+    value: PropTypes.string.isRequired,
+    onChangeText: PropTypes.func.isRequired,
+    placeholder: PropTypes.string,
+    keyboardType: PropTypes.string,
+    multiline: PropTypes.bool,
+    required: PropTypes.bool,
+};
+
+const SelectButton = ({ label, selected, onPress }) => (
+    <TouchableOpacity
+        style={[styles.selectButton, selected && styles.selectButtonActive]}
+        onPress={onPress}
+    >
+        <Text style={[styles.selectButtonText, selected && styles.selectButtonTextActive]}>
+            {label}
+        </Text>
+    </TouchableOpacity>
+);
+
+SelectButton.propTypes = {
+    label: PropTypes.string.isRequired,
+    selected: PropTypes.bool.isRequired,
+    onPress: PropTypes.func.isRequired,
+};
 
 export default function CreateProjectScreen({ navigation }) {
     const [projectTypes, setProjectTypes] = useState([]);
@@ -49,6 +94,7 @@ export default function CreateProjectScreen({ navigation }) {
             setProjectTypes(types);
             setRiskLevels(risks);
         } catch (error) {
+            console.error('Failed to load project form metadata:', error);
             Alert.alert('Error', 'Failed to load form data');
         } finally {
             setLoading(false);
@@ -57,27 +103,30 @@ export default function CreateProjectScreen({ navigation }) {
 
     const handleSubmit = async () => {
         // Validation
-        if (!formData.name || !formData.type || !formData.target) {
+        if (!formData.name || !formData.type || !formData.target || !formData.riskLevel) {
             Alert.alert('Validation Error', 'Please fill in all required fields');
             return;
         }
 
         try {
             setSubmitting(true);
-            const result = await api.createProject({
-                ...formData,
-                target: parseInt(formData.target, 10),
-                minInvestment: parseInt(formData.minInvestment, 10) || 100000,
+            await api.createProject({
+                name: formData.name,
+                type: formData.type,
+                description: formData.description,
+                targetAmount: Number.parseInt(formData.target, 10),
+                minInvestment: Number.parseInt(formData.minInvestment, 10) || 100000,
+                riskLevel: formData.riskLevel,
+                returnRate: formData.expectedReturn,
+                duration: formData.duration,
             });
-
-            if (result.success) {
-                Alert.alert(
-                    'Success',
-                    'Project created successfully!',
-                    [{ text: 'OK', onPress: () => navigation.goBack() }]
-                );
-            }
+            Alert.alert(
+                'Success',
+                'Project created successfully!',
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+            );
         } catch (error) {
+            console.error('Create project failed:', error);
             Alert.alert('Error', 'Failed to create project');
         } finally {
             setSubmitting(false);
@@ -91,51 +140,6 @@ export default function CreateProjectScreen({ navigation }) {
             </View>
         );
     }
-
-    const InputField = ({ label, value, onChangeText, placeholder, keyboardType, multiline, required }) => (
-        <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>
-                {label} {required && <Text style={styles.required}>*</Text>}
-            </Text>
-            <TextInput
-                style={[styles.input, multiline && styles.inputMultiline]}
-                value={value}
-                onChangeText={onChangeText}
-                placeholder={placeholder}
-                placeholderTextColor={theme.colors.textTertiary}
-                keyboardType={keyboardType || 'default'}
-                multiline={multiline}
-                numberOfLines={multiline ? 4 : 1}
-            />
-        </View>
-    );
-
-    InputField.propTypes = {
-        label: PropTypes.string.isRequired,
-        value: PropTypes.string.isRequired,
-        onChangeText: PropTypes.func.isRequired,
-        placeholder: PropTypes.string,
-        keyboardType: PropTypes.string,
-        multiline: PropTypes.bool,
-        required: PropTypes.bool,
-    };
-
-    const SelectButton = ({ label, selected, onPress }) => (
-        <TouchableOpacity
-            style={[styles.selectButton, selected && styles.selectButtonActive]}
-            onPress={onPress}
-        >
-            <Text style={[styles.selectButtonText, selected && styles.selectButtonTextActive]}>
-                {label}
-            </Text>
-        </TouchableOpacity>
-    );
-
-    SelectButton.propTypes = {
-        label: PropTypes.string.isRequired,
-        selected: PropTypes.bool.isRequired,
-        onPress: PropTypes.func.isRequired,
-    };
 
     return (
         <SafeAreaView style={styles.container}>

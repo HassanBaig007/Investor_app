@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ROLES, hasPermission, getAllPermissions, isProjectAdmin } from '../utils/permissions';
-import { getCurrentUser } from '../data/mockData';
+import { updateFromBackendConfig } from '../utils/validationUtils';
+import { api } from '../services/api';
 
 // Create the Auth Context
 const AuthContext = createContext(null);
@@ -55,36 +56,97 @@ export function AuthProvider({ children }) {
         await markAsLoggedIn();
     }, [markAsLoggedIn]);
 
+    // Storage key for onboarding status (matches App.js)
+    const ONBOARDING_KEY_PREFIX = 'splitflow_onboarded_';
+
+    /**
+     * Check onboarding status for user
+     */
+    const checkOnboardingStatus = useCallback(async (userId) => {
+        try {
+            const key = `${ONBOARDING_KEY_PREFIX}${userId}`;
+            const hasCompletedOnboarding = await AsyncStorage.getItem(key);
+            return hasCompletedOnboarding === 'true';
+        } catch (error) {
+            console.log('Error checking onboarding status:', error);
+            return true; // Default to completed on error to avoid sticking
+        }
+    }, []);
+
     /**
      * Login user and set role
      */
-    const login = useCallback(async (userId = 'USR001') => {
+    const login = useCallback(async (userData) => {
+        // userData will now be the real user object from the backend
+        const userId = userData?._id || userData?.id;
+
         // Check if this is first time user
         const isFirstTime = await checkFirstTimeUser();
         setIsFirstTimeUser(isFirstTime);
-        
-        // Just fetch the user from mock data based on ID
+
+        // Check onboarding status
+        const onboarded = await checkOnboardingStatus(userId);
+        setIsOnboarded(onboarded);
+
         const loggedInUser = {
-            ...getCurrentUser(), // Gets the user set by setCurrentUserId in mockData
-            role: ROLES.INVESTOR,
-            permissions: getAllPermissions(ROLES.INVESTOR),
+            ...userData,
+            id: userId,
+            role: userData.role || ROLES.INVESTOR,
+            permissions: getAllPermissions(userData.role || ROLES.INVESTOR),
             isFirstTimeUser: isFirstTime,
         };
+
         setUser(loggedInUser);
         setIsAuthenticated(true);
-        
+
+        // Asynchronously fetch authoritative permissions and app config from backend (non-blocking)
+        Promise.all([
+            api.getMyPermissions().catch(() => null),
+            api.getAppConfig().catch(() => null),
+        ]).then(([serverPerms, appConfig]) => {
+            if (serverPerms?.permissions?.length > 0) {
+                setUser(prev => ({ ...prev, permissions: serverPerms.permissions }));
+            }
+            // Update validation rules from backend config (password policy, disposable emails)
+            if (appConfig) {
+                updateFromBackendConfig(appConfig);
+            }
+        });
+
         // Show info modal only for first time users
         if (isFirstTime) {
             setShowInfoModal(true);
         }
-        
+
         return { success: true, user: loggedInUser };
-    }, [checkFirstTimeUser]);
+    }, [checkFirstTimeUser, checkOnboardingStatus]);
+
+    /**
+     * Restore session on app start
+     */
+    useEffect(() => {
+        let isStopped = false;
+        const restore = async () => {
+            try {
+                const token = await AsyncStorage.getItem('token');
+                if (token && !isAuthenticated && !isStopped) {
+                    const userData = await api.getProfile();
+                    if (!isStopped) await login(userData);
+                }
+            } catch (error) {
+                console.log('Session restoration failed:', error);
+            }
+        };
+        restore();
+        return () => { isStopped = true; };
+    }, [isAuthenticated, login]);
+
 
     /**
      * Logout user
      */
-    const logout = useCallback(() => {
+    const logout = useCallback(async () => {
+        await AsyncStorage.removeItem('token');
         setUser(null);
         setIsAuthenticated(false);
     }, []);
@@ -118,12 +180,21 @@ export function AuthProvider({ children }) {
     /**
      * Mark onboarding as complete
      */
-    const completeOnboarding = useCallback(() => {
-        setIsOnboarded(true);
-        // In production, persist this to storage/API
-    }, []);
+    const completeOnboarding = useCallback(async () => {
+        if (user?.id) {
+            try {
+                const key = `${ONBOARDING_KEY_PREFIX}${user.id}`;
+                await AsyncStorage.setItem(key, 'true');
+                setIsOnboarded(true);
+            } catch (error) {
+                console.log('Error saving onboarding status:', error);
+            }
+        } else {
+            setIsOnboarded(true);
+        }
+    }, [user]);
 
-    const value = {
+    const value = React.useMemo(() => ({
         // State
         user,
         isAuthenticated,
@@ -142,7 +213,7 @@ export function AuthProvider({ children }) {
         checkProjectAdmin,
         getProjectRole,
         hasPermission: (permission) => checkPermission(permission),
-    };
+    }), [user, isAuthenticated, isOnboarded, showInfoModal, isFirstTimeUser, login, logout, completeOnboarding, dismissInfoModal, checkPermission, checkProjectAdmin, getProjectRole]);
 
     return (
         <AuthContext.Provider value={value}>

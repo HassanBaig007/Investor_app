@@ -12,7 +12,7 @@
  * - Export functionality
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import {
     View,
@@ -21,30 +21,26 @@ import {
     StyleSheet,
     TouchableOpacity,
     TouchableWithoutFeedback,
-    Pressable,
     StatusBar,
     Dimensions,
     Modal,
-    FlatList,
     TextInput,
     KeyboardAvoidingView,
     Platform,
     Keyboard,
+    Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { theme } from '../../components/Theme';
-import {
-    expenseCategories,
-    getCurrentUser,
-    getProjectExpensesByUserInvestments,
-    getProjectExpenseSummaryByUserInvestments,
-    projects,
-    userAccounts,
-} from '../../data/mockData';
-import { exportExpenses, getExportFormats } from '../../utils/expenseExporter';
+import LedgerSelectModal from '../../components/modals/LedgerSelectModal';
+import SubLedgerSelectModal from '../../components/modals/SubLedgerSelectModal';
+import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
+import { writeExportFile, deleteExportFile, FILE_EXPORT_ENCODING } from '../../utils/fileExport';
+import { shareFileUri } from '../../utils/fileShare';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -81,11 +77,37 @@ const CATEGORY_COLORS = {
     Product: '#10B981',
 };
 
-export default function DailyExpensesScreen({ navigation }) {
-    const currentUser = getCurrentUser();
+const EXPORT_FORMATS = [
+    {
+        id: 'csv',
+        label: 'CSV Spreadsheet',
+        description: 'Best for Excel and data analysis',
+        icon: 'file-delimited',
+        color: '#10B981',
+    },
+    {
+        id: 'xlsx',
+        label: 'Excel Workbook',
+        description: 'Professional formatted .xlsx report',
+        icon: 'microsoft-excel',
+        color: '#6366F1',
+    },
+];
+
+export default function DailyExpensesScreen({ navigation }) { // NOSONAR
+    const insets = useSafeAreaInsets();
+    const { user: currentUser } = useAuth();
     const [transactions, setTransactions] = useState([]);
+    const [allProjects, setAllProjects] = useState([]);
     const [summary, setSummary] = useState({});
     const [selectedProject, setSelectedProject] = useState('all');
+    const [ledgers, setLedgers] = useState([]);
+    const [selectedLedgerId, setSelectedLedgerId] = useState('');
+    const [selectedSubLedger, setSelectedSubLedger] = useState('');
+    const [showLedgerSelectModal, setShowLedgerSelectModal] = useState(false);
+    const [showSubLedgerSelectModal, setShowSubLedgerSelectModal] = useState(false);
+    const [ledgerSearchQuery, setLedgerSearchQuery] = useState('');
+    const [ledgersLoading, setLedgersLoading] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
 
     // ScrollView ref for scrolling to top
@@ -96,10 +118,6 @@ export default function DailyExpensesScreen({ navigation }) {
 
     const toggleMeta = (id) => {
         setVisibleMetaId(prev => prev === id ? null : id);
-        // Scroll to top when showing meta info
-        if (visibleMetaId !== id && scrollViewRef.current) {
-            scrollViewRef.current.scrollTo({ y: 0, animated: true });
-        }
     };
     const [exportLoading, setExportLoading] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
@@ -107,57 +125,269 @@ export default function DailyExpensesScreen({ navigation }) {
     const [searchQuery, setSearchQuery] = useState(''); // NEW: Search functionality
     const [showSearch, setShowSearch] = useState(false); // NEW: Toggle search bar visibility
 
+    const getRefId = (value) => {
+        if (!value) return null;
+        if (typeof value === 'string') return value;
+        if (value._id) return String(value._id);
+        if (value.id) return String(value.id);
+        return null;
+    };
+
+    const getProjectKey = (project) => getRefId(project?._id || project?.id || project);
+
+    const getProjectMemberCount = (project) => {
+        const creatorId = getRefId(project?.createdBy);
+        const investorIds = (project?.investors || [])
+            .map((inv) => getRefId(inv?.user))
+            .filter(Boolean);
+        return new Set([creatorId, ...investorIds].filter(Boolean)).size;
+    };
+
+    const selectedLedger = ledgers.find((ledger) => String(ledger?.id || ledger?._id) === String(selectedLedgerId));
+
     // Get user's invested projects
-    const userProjects = projects.filter(p =>
-        p.projectInvestors && p.projectInvestors.includes(currentUser.id)
-    );
+    const isSuperAdmin = currentUser?.role === 'super_admin';
+    const userId = currentUser?.id || currentUser?._id;
+    const userProjects = allProjects.filter((project) => {
+        if (isSuperAdmin) return true;
+        const creatorId = getRefId(project?.createdBy);
+        if (String(creatorId) === String(userId)) return true;
+        const investors = project?.investors || [];
+        return investors.some((inv) => {
+            const investorId = getRefId(inv?.user);
+            return String(investorId) === String(userId);
+        });
+    });
+    const getEmptyStateMessage = () => {
+        if (userProjects.length === 0) {
+            return 'Join a project to add and track your spendings';
+        }
+        if (selectedProject !== 'all' && selectedLedgerId && selectedSubLedger) {
+            return 'No spendings found for the selected ledger and sub-ledger';
+        }
+        if (selectedProject === 'all') {
+            return 'Your approved spendings will appear here';
+        }
+        return 'You haven\'t added any spendings in this project';
+    };
 
-    // Refresh data whenever screen comes into focus
-    useFocusEffect(
-        React.useCallback(() => {
-            loadTransactions();
-        }, [selectedProject])
-    );
+    useEffect(() => {
+        let isMounted = true;
 
-    const loadTransactions = () => {
-        // Get last 60 days of project expenses from user's invested projects
+        const loadLedgers = async () => {
+            if (selectedProject === 'all') {
+                setLedgers([]);
+                setSelectedLedgerId('');
+                setSelectedSubLedger('');
+                setLedgerSearchQuery('');
+                return;
+            }
+
+            try {
+                setLedgersLoading(true);
+                const result = await api.getLedgers(selectedProject);
+                if (!isMounted) return;
+                setLedgers(result || []);
+                setSelectedLedgerId((previousLedgerId) => {
+                    const hasSelectedLedger = (result || []).some(
+                        (ledger) => String(ledger?.id || ledger?._id) === String(previousLedgerId) // NOSONAR
+                    );
+                    if (!hasSelectedLedger) {
+                        setSelectedSubLedger('');
+                        return '';
+                    }
+                    return previousLedgerId;
+                });
+            } catch (error) {
+                console.error('Failed to load ledgers:', error);
+                if (isMounted) {
+                    setLedgers([]);
+                    setSelectedLedgerId('');
+                    setSelectedSubLedger('');
+                }
+            } finally {
+                if (isMounted) setLedgersLoading(false);
+            }
+        };
+
+        loadLedgers();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [selectedProject]);
+
+    useEffect(() => {
+        setSelectedSubLedger('');
+    }, [selectedLedgerId]);
+
+    const loadTransactions = useCallback(async () => {
+        if (!userId) return;
+
+        // Get last 60 days of project expenses — single consolidated API call (no N+1)
         const now = new Date();
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - 60);
         const startStr = startDate.toISOString().split('T')[0];
         const endStr = now.toISOString().split('T')[0];
 
-        let allExpenses = getProjectExpensesByUserInvestments(startStr, endStr);
+        try {
+            // Fetch projects list for filter UI + consolidated expenses in parallel
+            const [projects, expenseResult] = await Promise.all([
+                api.getProjects(),
+                api.getMyExpenses({
+                    fromDate: startStr,
+                    toDate: endStr,
+                    projectId: selectedProject === 'all' ? undefined : selectedProject,
+                    ledgerId: selectedLedgerId || undefined,
+                    subLedger: selectedSubLedger || undefined,
+                    limit: 200,
+                }),
+            ]);
 
-        // Apply project filter
-        if (selectedProject !== 'all') {
-            allExpenses = allExpenses.filter(e => e.projectId === selectedProject);
+            const accessibleProjects = (projects || []).filter((project) => {
+                if (isSuperAdmin) return true;
+                const creatorId = getRefId(project?.createdBy);
+                if (String(creatorId) === String(userId)) return true;
+                const investors = project?.investors || [];
+                return investors.some((inv) => {
+                    const investorId = getRefId(inv?.user);
+                    return String(investorId) === String(userId);
+                });
+            });
+            setAllProjects(accessibleProjects);
+
+            // Backend already joins project names and populates fields
+            const allExpenses = (expenseResult?.expenses || [])
+                .map((expense) => {
+                    const createdAt = expense.createdAt ? new Date(expense.createdAt) : null;
+                    const fallbackDate = createdAt && !Number.isNaN(createdAt.getTime())
+                        ? createdAt.toISOString().split('T')[0]
+                        : endStr;
+                    const fallbackTime = createdAt && !Number.isNaN(createdAt.getTime())
+                        ? createdAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+                        : '';
+
+                    const projectId = expense.project?._id || expense.project;
+                    return {
+                        ...expense,
+                        id: expense.id || expense._id,
+                        source: 'project',
+                        projectId,
+                        projectName: expense.projectName || expense.project?.name || 'Project',
+                        ledgerId: expense.ledgerId || expense.ledger?._id || expense.ledger || null,
+                        ledgerName: expense.detailDisplay?.ledgerName || expense.ledgerName || expense.ledger?.name || '',
+                        subLedger: expense.detailDisplay?.subLedger || expense.subLedger || '',
+                        note: expense.note || expense.description || '',
+                        date: expense.date || fallbackDate,
+                        time: expense.time || fallbackTime,
+                        detailMode: expense.detailMode || '',
+                        detailDisplay: expense.detailDisplay || null,
+                        productName: expense.productName || '',
+                        paidTo: expense.paidTo || {
+                            person: expense.detailDisplay?.paidToPerson || expense.paidToPerson || '',
+                            place: expense.detailDisplay?.paidToPlace || expense.paidToPlace || '',
+                        },
+                        materialType: expense.materialType || expense.detailDisplay?.productName || '',
+                    };
+                });
+
+            setTransactions(allExpenses);
+
+            const newSummary = {
+                projectTotal: allExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0),
+                categoryBreakdown: allExpenses.reduce((acc, expense) => {
+                    const category = expense.category || 'other';
+                    acc[category] = (acc[category] || 0) + (expense.amount || 0);
+                    return acc;
+                }, {})
+            };
+            setSummary(newSummary);
+        } catch (error) {
+            console.error('Failed to load expense transactions:', error);
+            setTransactions([]);
+            setSummary({ projectTotal: 0, categoryBreakdown: {} });
         }
+    }, [isSuperAdmin, selectedLedgerId, selectedProject, selectedSubLedger, userId]);
 
-        setTransactions(allExpenses);
-        setSummary(getProjectExpenseSummaryByUserInvestments());
-    };
+    // Refresh data whenever screen comes into focus
+    useFocusEffect(
+        React.useCallback(() => {
+            loadTransactions();
+        }, [loadTransactions])
+    );
 
     // Handle export
     const handleExport = async (format) => {
-        setExportLoading(true);
+        let fileUri = null;
+        try {
+            if (!canDownloadExport) {
+                Alert.alert('Select Ledger & Sub-Ledger', 'Choose a project, ledger, and sub-ledger with visible expenses before downloading.');
+                return;
+            }
 
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-        const today = now.toISOString().split('T')[0];
-        const projectExpenses = getProjectExpensesByUserInvestments(startOfMonth, today);
+            setExportLoading(true);
 
-        const monthName = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+            const now = new Date();
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+            const today = now.toISOString().split('T')[0];
 
-        const success = await exportExpenses(projectExpenses, format, {
-            title: 'My Project Expenses',
-            dateRange: monthName,
-            userName: currentUser?.name || 'User',
-        });
+            const exportPayload = await api.exportExpenses(format, {
+                fromDate: startOfMonth,
+                toDate: today,
+                projectId: selectedProject === 'all' ? undefined : selectedProject,
+                ledgerId: selectedLedgerId || undefined,
+                subLedger: selectedSubLedger || undefined,
+            });
 
-        setExportLoading(false);
-        if (success) {
+            const content = exportPayload?.content || '';
+            const fileName = exportPayload?.filename || `expenses_${today}.${format}`;
+            const mimeType =
+                exportPayload?.mimeType ||
+                (format === 'xlsx'
+                    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    : 'text/csv;charset=utf-8');
+            const shouldUseBase64 = exportPayload?.encoding === 'base64' || format === 'xlsx';
+            const writeEncoding = shouldUseBase64
+                ? FILE_EXPORT_ENCODING.BASE64
+                : FILE_EXPORT_ENCODING.UTF8;
+
+            const writableContent =
+                !shouldUseBase64 && format === 'csv' && !content.startsWith('\uFEFF')
+                    ? `\uFEFF${content}`
+                    : content;
+
+            fileUri = await writeExportFile({
+                fileName,
+                content: writableContent,
+                encoding: writeEncoding,
+            });
+
+            const didShare = await shareFileUri(fileUri, {
+                dialogTitle: 'Export Expense History',
+                mimeType,
+            });
+
+            if (!didShare) {
+                Alert.alert(
+                    'Export Complete',
+                    `File saved successfully: ${fileName}`
+                );
+                setShowExportModal(false);
+                return;
+            }
+
             setShowExportModal(false);
+        } catch (error) {
+            console.error('Export failed:', error);
+            const backendMessage = error?.response?.data?.message;
+            Alert.alert(
+                'Export Failed',
+                backendMessage || error?.friendlyMessage || 'Could not export expenses. Please try again.'
+            );
+        } finally {
+            await deleteExportFile(fileUri);
+            setExportLoading(false);
         }
     };
 
@@ -173,10 +403,11 @@ export default function DailyExpensesScreen({ navigation }) {
         } else if (dateStr === yesterday.toISOString().split('T')[0]) {
             return 'Yesterday';
         } else {
+            const showYear = date.getFullYear() === today.getFullYear();
             return date.toLocaleDateString('en-IN', {
                 day: 'numeric',
                 month: 'short',
-                year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
+                year: showYear ? undefined : 'numeric'
             });
         }
     };
@@ -211,6 +442,84 @@ export default function DailyExpensesScreen({ navigation }) {
         groups[date].push(transaction);
         return groups;
     }, {});
+    const hasGroupedTransactions = Object.keys(groupedTransactions).length > 0;
+    const hasLedgerScopedExpenses =
+        selectedProject !== 'all' &&
+        Boolean(selectedLedgerId) &&
+        Boolean(selectedSubLedger) &&
+        transactions.length > 0;
+    const canDownloadExport = hasLedgerScopedExpenses && !exportLoading;
+
+    const detailContext = React.useMemo(() => {
+        if (!selectedTransaction) {
+            return {
+                resolvedLedgerName: '',
+                resolvedSubLedgerName: '',
+                showLedgerDetails: false,
+                showSubLedgerDetails: false,
+                showProductFallback: false,
+                showServiceFallback: false,
+                resolvedProductName: '',
+                resolvedPaidToPerson: '',
+                resolvedPaidToPlace: '',
+            };
+        }
+
+        const resolvedLedgerName =
+            selectedTransaction?.detailDisplay?.ledgerName ||
+            selectedTransaction?.ledgerName ||
+            selectedTransaction?.ledger?.name ||
+            ledgers.find((ledger) => String(ledger?.id || ledger?._id) === String(selectedTransaction?.ledgerId))?.name ||
+            '';
+
+        const resolvedSubLedgerName = String(
+            selectedTransaction?.detailDisplay?.subLedger || selectedTransaction?.subLedger || ''
+        ).trim();
+
+        const backendDetailMode = String(selectedTransaction?.detailMode || '').toLowerCase();
+        const showLedgerDetails = backendDetailMode
+            ? backendDetailMode === 'ledger'
+            : Boolean(resolvedLedgerName || resolvedSubLedgerName || selectedTransaction?.ledgerId);
+
+        const showSubLedgerDetails = Boolean(showLedgerDetails && resolvedSubLedgerName);
+        const showCategoryFallbackUnderLedger = Boolean(showLedgerDetails && !resolvedSubLedgerName);
+
+        const resolvedProductName = String(
+            selectedTransaction?.detailDisplay?.productName ||
+            selectedTransaction?.productName ||
+            selectedTransaction?.materialType ||
+            selectedTransaction?.subLedger ||
+            ''
+        ).trim();
+
+        const resolvedPaidToPerson = String(
+            selectedTransaction?.detailDisplay?.paidToPerson || selectedTransaction?.paidTo?.person || ''
+        ).trim();
+        const resolvedPaidToPlace = String(
+            selectedTransaction?.detailDisplay?.paidToPlace || selectedTransaction?.paidTo?.place || ''
+        ).trim();
+
+        const showProductFallback =
+            (showCategoryFallbackUnderLedger || !showLedgerDetails) &&
+            (backendDetailMode === 'product' || selectedTransaction?.category === 'Product') &&
+            Boolean(resolvedProductName);
+
+        const showServiceFallback =
+            (showCategoryFallbackUnderLedger || !showLedgerDetails) &&
+            (backendDetailMode === 'service' || selectedTransaction?.category === 'Service');
+
+        return {
+            resolvedLedgerName,
+            resolvedSubLedgerName,
+            showLedgerDetails,
+            showSubLedgerDetails,
+            showProductFallback,
+            showServiceFallback,
+            resolvedProductName,
+            resolvedPaidToPerson,
+            resolvedPaidToPlace,
+        };
+    }, [selectedTransaction, ledgers]);
 
     // Render transaction card with improved layout
     const renderTransactionCard = (transaction) => {
@@ -329,10 +638,23 @@ export default function DailyExpensesScreen({ navigation }) {
                         />
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={styles.exportBtn}
-                        onPress={() => setShowExportModal(true)}
+                        style={[styles.exportBtn, !canDownloadExport && styles.exportBtnDisabled]}
+                        onPress={() => {
+                            if (!hasLedgerScopedExpenses) {
+                                Alert.alert(
+                                    'Download Locked',
+                                    'Select a project, ledger, and sub-ledger that has expenses to enable download.'
+                                );
+                                return;
+                            }
+                            setShowExportModal(true);
+                        }}
                     >
-                        <MaterialCommunityIcons name="download" size={20} color={theme.colors.primary} />
+                        <MaterialCommunityIcons
+                            name="download"
+                            size={20}
+                            color={canDownloadExport ? theme.colors.primary : theme.colors.textTertiary}
+                        />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -374,7 +696,7 @@ export default function DailyExpensesScreen({ navigation }) {
                             <View style={styles.searchResultBadge}>
                                 <MaterialCommunityIcons name="filter-check" size={14} color={theme.colors.primary} />
                                 <Text style={styles.searchResultCount}>
-                                    {filteredTransactions.length} result{filteredTransactions.length !== 1 ? 's' : ''} found
+                                    {filteredTransactions.length} result{filteredTransactions.length === 1 ? '' : 's'} found
                                 </Text>
                             </View>
                         )}
@@ -407,13 +729,13 @@ export default function DailyExpensesScreen({ navigation }) {
                                         <View style={styles.summaryItem}>
                                             <View style={[styles.summaryDot, { backgroundColor: '#6366F1' }]} />
                                             <Text style={styles.summaryItemText}>
-                                                Services: ₹{(summary.categoryBreakdown?.project_service || 0).toLocaleString('en-IN')}
+                                                Services: ₹{((summary.categoryBreakdown?.project_service || 0) + (summary.categoryBreakdown?.Service || 0)).toLocaleString('en-IN')}
                                             </Text>
                                         </View>
                                         <View style={styles.summaryItem}>
                                             <View style={[styles.summaryDot, { backgroundColor: '#10B981' }]} />
                                             <Text style={styles.summaryItemText}>
-                                                Products: ₹{(summary.categoryBreakdown?.project_product || 0).toLocaleString('en-IN')}
+                                                Products: ₹{((summary.categoryBreakdown?.project_product || 0) + (summary.categoryBreakdown?.Product || 0)).toLocaleString('en-IN')}
                                             </Text>
                                         </View>
                                     </View>
@@ -436,12 +758,73 @@ export default function DailyExpensesScreen({ navigation }) {
                                     <Text style={styles.filterButtonValue}>
                                         {selectedProject === 'all'
                                             ? 'All Projects'
-                                            : userProjects.find(p => p.id === selectedProject)?.name || 'Select Project'}
+                                            : userProjects.find((p) => String(getProjectKey(p)) === String(selectedProject))?.name || 'Select Project'}
                                     </Text>
                                 </View>
                             </View>
                             <MaterialCommunityIcons name="chevron-down" size={24} color={theme.colors.textSecondary} />
                         </TouchableOpacity>
+
+                        {selectedProject !== 'all' && (
+                            <View style={styles.ledgerFilterCard}>
+                                <Text style={styles.ledgerFilterTitle}>Ledger Filters</Text>
+
+                                <View style={styles.ledgerSelectorRow}>
+                                    <View style={styles.ledgerSelectorCol}>
+                                        <Text style={styles.ledgerFilterLabel}>Ledger</Text>
+                                        <TouchableOpacity
+                                            style={styles.ledgerDropdownButton}
+                                            onPress={() => setShowLedgerSelectModal(true)}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.ledgerDropdownText,
+                                                    !selectedLedgerId && styles.placeholderText,
+                                                ]}
+                                                numberOfLines={1}
+                                            >
+                                                {selectedLedger?.name || 'Select Ledger'}
+                                            </Text>
+                                            <MaterialCommunityIcons name="chevron-down" size={20} color={theme.colors.textSecondary} />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <View style={styles.ledgerSelectorCol}>
+                                        <Text style={styles.ledgerFilterLabel}>Sub-Ledger</Text>
+                                        <TouchableOpacity
+                                            style={[styles.ledgerDropdownButton, !selectedLedgerId && styles.disabledInput]}
+                                            onPress={() => {
+                                                if (!selectedLedgerId) {
+                                                    Alert.alert('Select Ledger', 'Please select a ledger first.');
+                                                    return;
+                                                }
+                                                setShowSubLedgerSelectModal(true);
+                                            }}
+                                            disabled={!selectedLedgerId}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.ledgerDropdownText,
+                                                    !selectedSubLedger && styles.placeholderText,
+                                                ]}
+                                                numberOfLines={1}
+                                            >
+                                                {selectedSubLedger || 'Select Sub-Ledger'}
+                                            </Text>
+                                            <MaterialCommunityIcons
+                                                name="chevron-down"
+                                                size={20}
+                                                color={selectedLedgerId ? theme.colors.textSecondary : theme.colors.border}
+                                            />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+
+                                {!ledgersLoading && ledgers.length === 0 && (
+                                    <Text style={styles.ledgerHintText}>No ledgers found for this project</Text>
+                                )}
+                            </View>
+                        )}
                     </>
                 )}
 
@@ -516,44 +899,48 @@ export default function DailyExpensesScreen({ navigation }) {
                                             </TouchableOpacity>
 
                                             {/* Individual Project Options */}
-                                            {userProjects.map(project => (
-                                                <TouchableOpacity
-                                                    key={project.id}
-                                                    style={[
-                                                        styles.filterOption,
-                                                        selectedProject === project.id && styles.filterOptionActive
-                                                    ]}
-                                                    onPress={() => {
-                                                        setSelectedProject(project.id);
-                                                        setShowProjectFilter(false);
-                                                    }}
-                                                >
-                                                    <View style={[
-                                                        styles.filterOptionIconContainer,
-                                                        selectedProject === project.id && styles.filterOptionIconActive
-                                                    ]}>
-                                                        <MaterialCommunityIcons
-                                                            name="briefcase"
-                                                            size={28}
-                                                            color={selectedProject === project.id ? 'white' : '#6366F1'}
-                                                        />
-                                                    </View>
-                                                    <View style={styles.filterOptionContent}>
-                                                        <Text style={[
-                                                            styles.filterOptionLabel,
-                                                            selectedProject === project.id && styles.filterOptionLabelActive
+                                            {userProjects.map(project => {
+                                                const projectKey = getProjectKey(project);
+                                                const investorCount = getProjectMemberCount(project);
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={projectKey}
+                                                        style={[
+                                                            styles.filterOption,
+                                                            String(selectedProject) === String(projectKey) && styles.filterOptionActive
+                                                        ]}
+                                                        onPress={() => {
+                                                            setSelectedProject(projectKey);
+                                                            setShowProjectFilter(false);
+                                                        }}
+                                                    >
+                                                        <View style={[
+                                                            styles.filterOptionIconContainer,
+                                                            String(selectedProject) === String(projectKey) && styles.filterOptionIconActive
                                                         ]}>
-                                                            {project.name}
-                                                        </Text>
-                                                        <Text style={styles.filterOptionDescription}>
-                                                            {project.type} • {project.investorCount || 0} investors
-                                                        </Text>
-                                                    </View>
-                                                    {selectedProject === project.id && (
-                                                        <MaterialCommunityIcons name="check-circle" size={28} color="#10B981" />
-                                                    )}
-                                                </TouchableOpacity>
-                                            ))}
+                                                            <MaterialCommunityIcons
+                                                                name="briefcase"
+                                                                size={28}
+                                                                color={String(selectedProject) === String(projectKey) ? 'white' : '#6366F1'}
+                                                            />
+                                                        </View>
+                                                        <View style={styles.filterOptionContent}>
+                                                            <Text style={[
+                                                                styles.filterOptionLabel,
+                                                                String(selectedProject) === String(projectKey) && styles.filterOptionLabelActive
+                                                            ]}>
+                                                                {project.name}
+                                                            </Text>
+                                                            <Text style={styles.filterOptionDescription}>
+                                                                {project.type} • {investorCount} investors
+                                                            </Text>
+                                                        </View>
+                                                        {String(selectedProject) === String(projectKey) && (
+                                                            <MaterialCommunityIcons name="check-circle" size={28} color="#10B981" />
+                                                        )}
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
                                         </ScrollView>
 
                                         {/* Cancel Button */}
@@ -570,6 +957,45 @@ export default function DailyExpensesScreen({ navigation }) {
                     </TouchableWithoutFeedback>
                 </Modal>
 
+                <LedgerSelectModal
+                    visible={showLedgerSelectModal}
+                    onClose={() => setShowLedgerSelectModal(false)}
+                    ledgers={ledgers}
+                    searchQuery={ledgerSearchQuery}
+                    onSearchChange={setLedgerSearchQuery}
+                    isAdmin={false}
+                    editMode={false}
+                    onEditModeChange={() => { }}
+                    newName=""
+                    onNewNameChange={() => { }}
+                    onAdd={() => { }}
+                    onSelect={(ledger) => {
+                        setSelectedLedgerId(ledger?.id || ledger?._id || '');
+                        setSelectedSubLedger('');
+                        setShowLedgerSelectModal(false);
+                    }}
+                    selectedId={selectedLedgerId}
+                    onDelete={() => { }}
+                />
+
+                <SubLedgerSelectModal
+                    visible={showSubLedgerSelectModal}
+                    onClose={() => setShowSubLedgerSelectModal(false)}
+                    selectedLedgerObj={selectedLedger}
+                    isAdmin={false}
+                    editMode={false}
+                    onEditModeChange={() => { }}
+                    newName=""
+                    onNewNameChange={() => { }}
+                    onAdd={() => { }}
+                    onSelect={(subName) => {
+                        setSelectedSubLedger(subName);
+                        setShowSubLedgerSelectModal(false);
+                    }}
+                    selectedSubLedger={selectedSubLedger}
+                    onDelete={() => { }}
+                />
+
                 {/* Transactions List */}
                 <ScrollView
                     ref={scrollViewRef}
@@ -577,24 +1003,20 @@ export default function DailyExpensesScreen({ navigation }) {
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                 >
-                    {Object.keys(groupedTransactions).length > 0 ? (
+                    {hasGroupedTransactions ? (
                         Object.entries(groupedTransactions)
                             .sort((a, b) => b[0].localeCompare(a[0]))
                             .map(renderDateSection)
                     ) : (
                         <View style={styles.emptyState}>
                             <MaterialCommunityIcons
-                                name="receipt-text-outline"
+                                name="receipt"
                                 size={64}
                                 color={theme.colors.textMuted}
                             />
                             <Text style={styles.emptyStateTitle}>No Spendings Yet</Text>
                             <Text style={styles.emptyStateText}>
-                                {userProjects.length === 0
-                                    ? 'Join a project to add and track your spendings'
-                                    : selectedProject !== 'all'
-                                        ? 'You haven\'t added any spendings in this project'
-                                        : 'Your approved spendings will appear here'}
+                                {getEmptyStateMessage()}
                             </Text>
                         </View>
                     )}
@@ -619,116 +1041,106 @@ export default function DailyExpensesScreen({ navigation }) {
                                 </View>
 
                                 {selectedTransaction && (
-                                    <ScrollView showsVerticalScrollIndicator={false}>
-                                        {/* Amount Header */}
-                                        <View style={styles.detailHeader}>
-                                            <View style={[
-                                                styles.detailIconLarge,
-                                                { backgroundColor: `${CATEGORY_COLORS[selectedTransaction.category] || CATEGORY_COLORS.other}15` }
-                                            ]}>
-                                                <MaterialCommunityIcons
-                                                    name={CATEGORY_ICONS[selectedTransaction.category] || CATEGORY_ICONS.other}
-                                                    size={32}
-                                                    color={CATEGORY_COLORS[selectedTransaction.category] || CATEGORY_COLORS.other}
-                                                />
-                                            </View>
-                                            <Text style={styles.detailAmount}>
-                                                ₹{selectedTransaction.amount.toLocaleString('en-IN')}
-                                            </Text>
-                                            <Text style={styles.detailDescription}>
-                                                {selectedTransaction.note || selectedTransaction.category}
-                                            </Text>
-
-                                            {/* Source Badge */}
-                                            <View style={[styles.sourceBadge, styles.projectSourceBadge]}>
-                                                <MaterialCommunityIcons
-                                                    name="briefcase"
-                                                    size={14}
-                                                    color="#6366F1"
-                                                />
-                                                <Text style={[styles.sourceBadgeText, { color: '#6366F1' }]}>
-                                                    Project Expense
-                                                </Text>
-                                            </View>
-                                        </View>
-
-                                        {/* Details Section */}
-                                        <View style={styles.detailSection}>
-                                            <Text style={styles.detailSectionTitle}>Transaction Details</Text>
-
-                                            <View style={styles.detailRow}>
-                                                <Text style={styles.detailLabel}>Date</Text>
-                                                <Text style={styles.detailValue}>
-                                                    {new Date(selectedTransaction.date).toLocaleDateString('en-IN', {
-                                                        weekday: 'long',
-                                                        day: 'numeric',
-                                                        month: 'long',
-                                                        year: 'numeric'
-                                                    })}
-                                                </Text>
-                                            </View>
-
-                                            <View style={styles.detailRow}>
-                                                <Text style={styles.detailLabel}>Time</Text>
-                                                <Text style={styles.detailValue}>{selectedTransaction.time}</Text>
-                                            </View>
-
-                                            <View style={styles.detailRow}>
-                                                <Text style={styles.detailLabel}>Category</Text>
-                                                <View style={styles.categoryBadgeSmall}>
+                                    <>
+                                        <ScrollView
+                                            showsVerticalScrollIndicator={false}
+                                            contentContainerStyle={styles.detailScrollContent}
+                                        >
+                                            {/* Amount Header */}
+                                            <View style={styles.detailHeader}>
+                                                <View style={[
+                                                    styles.detailIconLarge,
+                                                    { backgroundColor: `${CATEGORY_COLORS[selectedTransaction.category] || CATEGORY_COLORS.other}15` }
+                                                ]}>
                                                     <MaterialCommunityIcons
                                                         name={CATEGORY_ICONS[selectedTransaction.category] || CATEGORY_ICONS.other}
-                                                        size={14}
+                                                        size={32}
                                                         color={CATEGORY_COLORS[selectedTransaction.category] || CATEGORY_COLORS.other}
                                                     />
-                                                    <Text style={[styles.detailValue, { marginLeft: 6 }]}>
-                                                        {capitalizeFirst(selectedTransaction.category)}
+                                                </View>
+                                                <Text style={styles.detailAmount}>
+                                                    ₹{selectedTransaction.amount.toLocaleString('en-IN')}
+                                                </Text>
+                                                <Text style={styles.detailDescription}>
+                                                    {selectedTransaction.note || selectedTransaction.category}
+                                                </Text>
+
+                                            </View>
+
+                                            {/* Details Section */}
+                                            <View style={styles.detailSection}>
+                                                <View style={styles.detailSectionHeader}>
+                                                    <Text style={styles.detailSectionTitle}>Transaction Details</Text>
+                                                    <Text style={styles.detailSectionTime}>
+                                                        {formatTimeAMPM(selectedTransaction.time) || selectedTransaction.time || '—'}
                                                     </Text>
                                                 </View>
-                                            </View>
 
-                                            <View style={styles.detailRow}>
-                                                <Text style={styles.detailLabel}>Project</Text>
-                                                <Text style={[styles.detailValue, { color: '#6366F1' }]}>
-                                                    {selectedTransaction.projectName}
-                                                </Text>
-                                            </View>
+                                                <View style={styles.detailRow}>
+                                                    <Text style={styles.detailLabel}>Date</Text>
+                                                    <Text style={styles.detailValue}>
+                                                        {new Date(selectedTransaction.date).toLocaleDateString('en-IN', {
+                                                            weekday: 'long',
+                                                            day: 'numeric',
+                                                            month: 'long',
+                                                            year: 'numeric'
+                                                        })}
+                                                    </Text>
+                                                </View>
 
-                                            {selectedTransaction.paidTo && (
-                                                <>
+                                                <View style={styles.detailRow}>
+                                                    <Text style={styles.detailLabel}>Project</Text>
+                                                    <Text style={[styles.detailValue, { color: '#6366F1' }]}>
+                                                        {selectedTransaction.projectName}
+                                                    </Text>
+                                                </View>
+
+                                                {detailContext.showLedgerDetails && detailContext.resolvedLedgerName ? (
+                                                    <View style={styles.detailRow}>
+                                                        <Text style={styles.detailLabel}>Ledger</Text>
+                                                        <Text style={styles.detailValue}>{detailContext.resolvedLedgerName}</Text>
+                                                    </View>
+                                                ) : null}
+
+                                                {detailContext.showSubLedgerDetails ? (
+                                                    <View style={styles.detailRow}>
+                                                        <Text style={styles.detailLabel}>Sub-Ledger</Text>
+                                                        <Text style={styles.detailValue}>{detailContext.resolvedSubLedgerName}</Text>
+                                                    </View>
+                                                ) : null}
+
+                                                {detailContext.showProductFallback ? (
+                                                    <View style={styles.detailRow}>
+                                                        <Text style={styles.detailLabel}>Product Name</Text>
+                                                        <Text style={styles.detailValue}>{detailContext.resolvedProductName}</Text>
+                                                    </View>
+                                                ) : null}
+
+                                                {detailContext.showServiceFallback && detailContext.resolvedPaidToPerson ? (
                                                     <View style={styles.detailRow}>
                                                         <Text style={styles.detailLabel}>Paid To</Text>
-                                                        <Text style={styles.detailValue}>
-                                                            {selectedTransaction.paidTo.person}
-                                                        </Text>
+                                                        <Text style={styles.detailValue}>{detailContext.resolvedPaidToPerson}</Text>
                                                     </View>
+                                                ) : null}
+
+                                                {detailContext.showServiceFallback && detailContext.resolvedPaidToPlace ? (
                                                     <View style={styles.detailRow}>
                                                         <Text style={styles.detailLabel}>Place</Text>
-                                                        <Text style={styles.detailValue}>
-                                                            {selectedTransaction.paidTo.place}
-                                                        </Text>
+                                                        <Text style={styles.detailValue}>{detailContext.resolvedPaidToPlace}</Text>
                                                     </View>
-                                                </>
-                                            )}
+                                                ) : null}
+                                            </View>
 
-                                            {selectedTransaction.materialType && (
-                                                <View style={styles.detailRow}>
-                                                    <Text style={styles.detailLabel}>Material Type</Text>
-                                                    <Text style={styles.detailValue}>
-                                                        {selectedTransaction.materialType}
-                                                    </Text>
-                                                </View>
-                                            )}
+                                        </ScrollView>
+                                        <View style={[styles.detailFooter, { paddingBottom: Math.max(insets.bottom + 12, 12) }]}>
+                                            <TouchableOpacity
+                                                style={styles.closeDetailBtnFooter}
+                                                onPress={() => setSelectedTransaction(null)}
+                                            >
+                                                <Text style={styles.closeDetailBtnText}>Close</Text>
+                                            </TouchableOpacity>
                                         </View>
-
-                                        {/* Close Button */}
-                                        <TouchableOpacity
-                                            style={styles.closeDetailBtn}
-                                            onPress={() => setSelectedTransaction(null)}
-                                        >
-                                            <Text style={styles.closeDetailBtnText}>Close</Text>
-                                        </TouchableOpacity>
-                                    </ScrollView>
+                                    </>
                                 )}
                             </View>
                         </TouchableWithoutFeedback>
@@ -766,12 +1178,15 @@ export default function DailyExpensesScreen({ navigation }) {
                                     </View>
 
                                     <View style={styles.exportOptions}>
-                                        {getExportFormats().map((format) => (
+                                        {EXPORT_FORMATS.map((format) => (
                                             <TouchableOpacity
                                                 key={format.id}
-                                                style={styles.exportOption}
+                                                style={[
+                                                    styles.exportOption,
+                                                    (!hasLedgerScopedExpenses || exportLoading) && styles.exportOptionDisabled,
+                                                ]}
                                                 onPress={() => handleExport(format.id)}
-                                                disabled={exportLoading}
+                                                disabled={exportLoading || !hasLedgerScopedExpenses}
                                             >
                                                 <View style={[styles.exportOptionIcon, { backgroundColor: `${format.color}15` }]}>
                                                     <MaterialCommunityIcons
@@ -796,7 +1211,9 @@ export default function DailyExpensesScreen({ navigation }) {
                                     <View style={styles.exportInfo}>
                                         <MaterialCommunityIcons name="information-outline" size={16} color={theme.colors.textTertiary} />
                                         <Text style={styles.exportInfoText}>
-                                            Includes all project expenses from your invested projects this month
+                                            {hasLedgerScopedExpenses
+                                                ? 'Download includes filtered project, ledger, and sub-ledger expenses for this month'
+                                                : 'Select project, ledger, and sub-ledger with available expenses to enable download'}
                                         </Text>
                                     </View>
 
@@ -819,7 +1236,7 @@ export default function DailyExpensesScreen({ navigation }) {
 // Helper function
 const capitalizeFirst = (str) => {
     if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1).replace(/_/g, ' ');
+    return str.charAt(0).toUpperCase() + str.slice(1).replaceAll('_', ' ');
 };
 
 DailyExpensesScreen.propTypes = {
@@ -874,6 +1291,9 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderRadius: 14,
         backgroundColor: theme.colors.primaryLight,
+    },
+    exportBtnDisabled: {
+        backgroundColor: theme.colors.surfaceAlt,
     },
     // NEW: Header Actions Container
     headerActions: {
@@ -1138,6 +1558,59 @@ const styles = StyleSheet.create({
         color: theme.colors.textSecondary,
     },
 
+    ledgerFilterCard: {
+        backgroundColor: theme.colors.surface,
+        marginHorizontal: 16,
+        marginBottom: 16,
+        padding: 16,
+        borderRadius: 16,
+        ...theme.shadows.soft,
+    },
+    ledgerFilterTitle: {
+        ...theme.typography.bodySemibold,
+        color: theme.colors.textPrimary,
+        marginBottom: 12,
+    },
+    ledgerSelectorRow: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    ledgerSelectorCol: {
+        flex: 1,
+    },
+    ledgerFilterLabel: {
+        ...theme.typography.caption,
+        color: theme.colors.textSecondary,
+        marginBottom: 8,
+    },
+    ledgerDropdownButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        minHeight: 44,
+        backgroundColor: theme.colors.surface,
+    },
+    ledgerDropdownText: {
+        flex: 1,
+        color: theme.colors.textPrimary,
+    },
+    ledgerHintText: {
+        ...theme.typography.small,
+        color: theme.colors.textTertiary,
+        paddingVertical: 8,
+    },
+    placeholderText: {
+        color: theme.colors.textTertiary,
+    },
+    disabledInput: {
+        backgroundColor: theme.colors.surfaceAlt,
+        borderColor: theme.colors.borderLight,
+    },
+
     // Scroll View
     scrollView: {
         flex: 1,
@@ -1286,6 +1759,9 @@ const styles = StyleSheet.create({
         paddingTop: 14,
         paddingBottom: 10,
     },
+    detailScrollContent: {
+        paddingBottom: 8,
+    },
     handleBar: {
         width: 48,
         height: 5,
@@ -1346,11 +1822,21 @@ const styles = StyleSheet.create({
         paddingTop: 20,
         paddingBottom: 10,
     },
+    detailSectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
     detailSectionTitle: {
         fontSize: 18,
         fontWeight: '700',
         color: theme.colors.textPrimary,
-        marginBottom: 16,
+    },
+    detailSectionTime: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: theme.colors.textSecondary,
     },
     detailRow: {
         flexDirection: 'row',
@@ -1398,6 +1884,20 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: 'white',
+    },
+    detailFooter: {
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: theme.colors.borderLight,
+        backgroundColor: theme.colors.surface,
+    },
+    closeDetailBtnFooter: {
+        paddingVertical: 16,
+        borderRadius: 14,
+        backgroundColor: theme.colors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 
     // Export Modal
@@ -1452,6 +1952,9 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.surfaceAlt,
         borderRadius: theme.borderRadius.m,
         padding: 14,
+    },
+    exportOptionDisabled: {
+        opacity: 0.55,
     },
     exportOptionIcon: {
         width: 44,

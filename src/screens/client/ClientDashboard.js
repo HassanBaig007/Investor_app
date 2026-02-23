@@ -9,22 +9,36 @@ import {
     StatusBar,
     Alert,
     Animated,
-    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme, formatCurrency } from '../../components/Theme';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import ProfileMenu from '../../components/ProfileMenu';
 
-// Import from centralized data
-import { portfolioSummary, investments, recentUpdates, currentUser, getRelativeTime, pendingModifications } from '../../data/mockData';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// Import utilities only from centralized data
+import { getRelativeTime } from '../../utils/dateTimeUtils';
+import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export default function ClientDashboard({ navigation, onLogout }) {
-    const portfolio = portfolioSummary;
+    const { user: currentUser } = useAuth();
+    const currentUserName = currentUser?.name || 'Investor';
+    const [portfolio, setPortfolio] = useState({ totalInvested: 0, currentValue: 0, returns: 0, returnsPercent: 0 });
+    const [investments, setInvestments] = useState([]);
+    const [notifications, setNotifications] = useState([]);
+    const [pendingCount, setPendingCount] = useState(0);
     const isPositive = portfolio.returns >= 0;
+
+    // Derive recentUpdates from notifications
+    const recentUpdates = notifications.map(n => ({
+        id: n._id || n.id,
+        title: n.title || n.body || 'Update',
+        project: n.payload?.projectName || 'Project',
+        type: n.payload?.type || 'update',
+        read: n.isRead,
+        timestamp: n.createdAt,
+    }));
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -33,6 +47,25 @@ export default function ClientDashboard({ navigation, onLogout }) {
     const [showProfileMenu, setShowProfileMenu] = useState(false);
 
     useEffect(() => {
+        const fetchClientData = async () => {
+            try {
+                const [portfolioData, investmentsData, notificationsData, modificationsData] = await Promise.all([
+                    api.getPortfolio().catch(() => ({ totalInvested: 0, currentValue: 0, returns: 0, returnsPercent: 0 })),
+                    api.getInvestments().catch(() => []),
+                    api.getNotifications().catch(() => []),
+                    api.getModifications().catch(() => []),
+                ]);
+                setPortfolio(portfolioData);
+                setInvestments(investmentsData || []);
+                setNotifications(notificationsData || []);
+                const pending = (modificationsData || []).filter(m => m.status === 'pending');
+                setPendingCount(pending.length);
+            } catch (err) {
+                console.error('Failed to load client dashboard:', err);
+            }
+        };
+        fetchClientData();
+
         Animated.parallel([
             Animated.timing(fadeAnim, {
                 toValue: 1,
@@ -59,7 +92,7 @@ export default function ClientDashboard({ navigation, onLogout }) {
     };
 
     const quickActions = [
-        { icon: 'checkmark-circle', label: 'Approvals', gradient: ['#EF4444', '#F97316'], screen: 'Approvals', badge: pendingModifications.filter(m => !m.myVote).length },
+        { icon: 'checkmark-circle', label: 'Approvals', gradient: ['#EF4444', '#F97316'], screen: 'Approvals', badge: pendingCount },
         { icon: 'document-text', label: 'Reports', gradient: ['#F59E0B', '#FBBF24'], screen: 'Reports' },
         { icon: 'pie-chart', label: 'Analytics', gradient: ['#6366F1', '#8B5CF6'], screen: 'PortfolioAnalytics' },
         { icon: 'chatbubble-ellipses', label: 'Support', gradient: ['#3B82F6', '#60A5FA'], screen: null },
@@ -73,12 +106,12 @@ export default function ClientDashboard({ navigation, onLogout }) {
             <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
                 <View style={styles.headerLeft}>
                     <Text style={styles.greeting}>Welcome back,</Text>
-                    <Text style={styles.userName}>{currentUser.name}</Text>
+                    <Text style={styles.userName}>{currentUser?.name || 'Investor'}</Text>
                 </View>
                 <View style={styles.headerActions}>
                     <TouchableOpacity style={styles.iconBtn}>
                         <Ionicons name="notifications-outline" size={22} color={theme.colors.textPrimary} />
-                        {recentUpdates.some(u => !u.read) && <View style={styles.notifBadge} />}
+                        {notifications.some(u => !u.isRead) && <View style={styles.notifBadge} />}
                     </TouchableOpacity>
                     <TouchableOpacity onPress={handleProfilePress}>
                         <LinearGradient
@@ -86,7 +119,7 @@ export default function ClientDashboard({ navigation, onLogout }) {
                             style={styles.profileBtn}
                         >
                             <Text style={styles.profileInitials}>
-                                {currentUser.name.split(' ').map(n => n[0]).join('')}
+                                {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('') : 'U'}
                             </Text>
                         </LinearGradient>
                     </TouchableOpacity>
@@ -312,7 +345,7 @@ export default function ClientDashboard({ navigation, onLogout }) {
                 onProfile={() => navigation.navigate('Profile')}
                 onSettings={() => navigation.navigate('Settings')}
                 onLogout={onLogout}
-                userName={currentUser.name}
+                userName={currentUserName}
             />
         </SafeAreaView>
     );

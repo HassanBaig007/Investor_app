@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import {
     View,
@@ -11,40 +11,56 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme, formatCurrency } from '../../components/Theme';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 // LinearGradient removed - unused import
 
 // Import from centralized data
-import { pendingModifications, getDaysRemaining } from '../../data/mockData';
+import { getDaysRemaining } from '../../utils/dateTimeUtils';
+import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 export default function ApprovalsScreen({ navigation }) {
-    const [modifications, setModifications] = useState(pendingModifications);
+    const { user: currentUser } = useAuth();
+    const [modifications, setModifications] = useState([]);
     const [submitting, setSubmitting] = useState(null);
+    const [approvalThreshold, setApprovalThreshold] = useState(0.5); // default; overridden by backend
+
+    useEffect(() => {
+        const fetchModifications = async () => {
+            try {
+                const [data, appConfig] = await Promise.all([
+                    api.getModifications(),
+                    api.getAppConfig().catch(() => null),
+                ]);
+                setModifications((data || []).filter(m => m.status === 'pending'));
+                // Use backend-authoritative approval threshold if available
+                if (appConfig?.approvalThresholdPercent != null) {
+                    setApprovalThreshold(appConfig.approvalThresholdPercent / 100);
+                }
+            } catch (err) {
+                console.error('Failed to load modifications:', err);
+            }
+        };
+        fetchModifications();
+    }, []);
 
     const processVote = async (modId, vote, action) => {
         setSubmitting(modId);
-
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        setModifications(prev => prev.map(mod => {
-            if (mod.id === modId) {
-                return {
-                    ...mod,
-                    myVote: vote === 'approve' ? 'approved' : 'rejected',
-                    votes: {
-                        ...mod.votes,
-                        approved: vote === 'approve' ? mod.votes.approved + 1 : mod.votes.approved,
-                        rejected: vote === 'reject' ? mod.votes.rejected + 1 : mod.votes.rejected,
-                        pending: mod.votes.pending - 1,
-                    }
-                };
+        try {
+            if (vote === 'approve') {
+                await api.approveRequest(modId);
+            } else {
+                await api.rejectRequest(modId, 'Rejected by investor');
             }
-            return mod;
-        }));
-
-        setSubmitting(null);
-        Alert.alert('Vote Submitted', `Your ${action} has been recorded.`);
+            // Remove from local list after successful vote
+            setModifications(prev => prev.filter(m => (m._id || m.id) !== modId));
+            Alert.alert('Vote Submitted', `Your ${action} has been recorded.`);
+        } catch (err) {
+            console.error('Vote failed:', err);
+            Alert.alert('Error', err.friendlyMessage || 'Failed to submit vote.');
+        } finally {
+            setSubmitting(null);
+        }
     };
 
     const handleVote = (modId, vote) => {
@@ -67,15 +83,22 @@ export default function ApprovalsScreen({ navigation }) {
     };
 
     const getVoteProgress = (votes) => {
-        const threshold = Math.ceil(votes.total * 0.5); // 50% threshold
+        const safeTotal = Math.max(votes?.total || 0, 1);
+        const threshold = Math.ceil(safeTotal * approvalThreshold); // backend-driven threshold
         return {
-            approvalPercent: (votes.approved / votes.total) * 100,
+            approvalPercent: ((votes?.approved || 0) / safeTotal) * 100,
             needed: threshold,
-            current: votes.approved,
+            current: votes?.approved || 0,
         };
     };
 
-    const pendingCount = modifications.filter(m => !m.myVote).length;
+    const currentUserId = currentUser?.id || currentUser?._id;
+    const pendingCount = modifications.filter((m) => {
+        const votesMap = m.votesMap || {};
+        const myVote = votesMap[currentUserId] ||
+            Object.values(votesMap).find(v => String(v?.user || '') === String(currentUserId));
+        return !myVote && m.status !== 'approved';
+    }).length;
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
@@ -117,14 +140,28 @@ export default function ApprovalsScreen({ navigation }) {
                         <Text style={styles.emptyStateText}>All project modifications have been reviewed.</Text>
                     </View>
                 ) : (
-                    modifications.map((mod) => {
-                        const daysLeft = getDaysRemaining(mod.deadline);
+                    modifications.map((mod) => { // NOSONAR
+                        const daysLeft = mod.deadline ? getDaysRemaining(mod.deadline) : 999;
                         const progress = getVoteProgress(mod.votes);
                         const isUrgent = daysLeft <= 3;
-                        const hasVoted = mod.myVote !== null;
+                        const myVote = (mod.votesMap || {})[currentUserId]?.status ||
+                            Object.values(mod.votesMap || {}).find(v => String(v?.user || '') === String(currentUserId))?.status;
+                        const hasVoted = !!myVote;
+                        const isAlreadyApproved = mod.status === 'approved';
+                        const modId = mod.id || mod._id;
+                        const votedStateColor =
+                            isAlreadyApproved || myVote === 'approved'
+                                ? theme.colors.success
+                                : theme.colors.danger;
+                        let votedStateIcon = 'close-circle';
+                        if (isAlreadyApproved) {
+                            votedStateIcon = 'checkmark-done-circle';
+                        } else if (myVote === 'approved') {
+                            votedStateIcon = 'checkmark-circle';
+                        }
 
                         return (
-                            <View key={mod.id} style={styles.modCard}>
+                            <View key={modId} style={styles.modCard}>
                                 {/* Header */}
                                 <View style={styles.modHeader}>
                                     <View style={[styles.modTypeIcon, {
@@ -188,7 +225,7 @@ export default function ApprovalsScreen({ navigation }) {
                                     <View style={styles.voteProgressHeader}>
                                         <Text style={styles.voteProgressTitle}>Investor Votes</Text>
                                         <Text style={styles.voteProgressCount}>
-                                            {mod.votes.approved + mod.votes.rejected}/{mod.votes.total} voted
+                                            {(mod.votes?.approved || 0) + (mod.votes?.rejected || 0)}/{mod.votes?.total || 0} voted
                                         </Text>
                                     </View>
                                     <View style={styles.voteProgressBar}>
@@ -202,49 +239,49 @@ export default function ApprovalsScreen({ navigation }) {
                                     <View style={styles.voteStats}>
                                         <View style={styles.voteStat}>
                                             <View style={[styles.voteStatDot, { backgroundColor: theme.colors.success }]} />
-                                            <Text style={styles.voteStatText}>{mod.votes.approved} Approved</Text>
+                                            <Text style={styles.voteStatText}>{mod.votes?.approved || 0} Approved</Text>
                                         </View>
                                         <View style={styles.voteStat}>
                                             <View style={[styles.voteStatDot, { backgroundColor: theme.colors.danger }]} />
-                                            <Text style={styles.voteStatText}>{mod.votes.rejected} Rejected</Text>
+                                            <Text style={styles.voteStatText}>{mod.votes?.rejected || 0} Rejected</Text>
                                         </View>
                                         <View style={styles.voteStat}>
                                             <View style={[styles.voteStatDot, { backgroundColor: theme.colors.textTertiary }]} />
-                                            <Text style={styles.voteStatText}>{mod.votes.pending} Pending</Text>
+                                            <Text style={styles.voteStatText}>{mod.votes?.pending || 0} Pending</Text>
                                         </View>
                                     </View>
                                 </View>
 
                                 {/* Actions */}
-                                {hasVoted ? (
+                                {hasVoted || isAlreadyApproved ? (
                                     <View style={styles.votedBanner}>
                                         <Ionicons
-                                            name={mod.myVote === 'approved' ? 'checkmark-circle' : 'close-circle'}
+                                            name={votedStateIcon}
                                             size={20}
-                                            color={mod.myVote === 'approved' ? theme.colors.success : theme.colors.danger}
+                                            color={votedStateColor}
                                         />
                                         <Text style={[styles.votedBannerText, {
-                                            color: mod.myVote === 'approved' ? theme.colors.success : theme.colors.danger
+                                            color: votedStateColor,
                                         }]}>
-                                            You {mod.myVote} this request
+                                            {isAlreadyApproved ? 'This modification is fully approved' : `You ${myVote} this request`}
                                         </Text>
                                     </View>
                                 ) : (
                                     <View style={styles.voteActions}>
                                         <TouchableOpacity
                                             style={styles.rejectBtn}
-                                            onPress={() => handleVote(mod.id, 'reject')}
-                                            disabled={submitting === mod.id}
+                                            onPress={() => handleVote(modId, 'reject')}
+                                            disabled={submitting === modId}
                                         >
                                             <Ionicons name="close" size={20} color={theme.colors.danger} />
                                             <Text style={styles.rejectBtnText}>Reject</Text>
                                         </TouchableOpacity>
                                         <TouchableOpacity
                                             style={styles.approveBtn}
-                                            onPress={() => handleVote(mod.id, 'approve')}
-                                            disabled={submitting === mod.id}
+                                            onPress={() => handleVote(modId, 'approve')}
+                                            disabled={submitting === modId}
                                         >
-                                            {submitting === mod.id ? (
+                                            {submitting === modId ? (
                                                 <Text style={styles.approveBtnText}>Submitting...</Text>
                                             ) : (
                                                 <>

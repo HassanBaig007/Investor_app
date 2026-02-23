@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import {
     View,
@@ -10,22 +10,85 @@ import {
     Platform,
     Alert,
     ScrollView,
+
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme } from '../components/Theme';
-import { registerUser } from '../data/mockData';
+import api from '../services/api';
 import {
-    validateSignupForm,
     validatePassword,
     validateEmail,
     validateName,
+    validateSignupForm,
     getPasswordStrengthColor,
     getPasswordStrengthLabel
 } from '../utils/validationUtils';
 
-export default function SignUpScreen({ navigation, onLogin }) {
+const getInputIconColor = (hasError, isFocused) => {
+    if (hasError) return '#EF4444';
+    if (isFocused) return theme.colors.primary;
+    return theme.colors.textTertiary;
+};
+
+const getStrengthWidth = (strength) => {
+    if (strength === 'strong') return '100%';
+    if (strength === 'medium') return '60%';
+    return '30%';
+};
+
+const RequirementItem = ({ met, label }) => (
+    <View style={styles.requirementItem}>
+        <MaterialCommunityIcons
+            name={met ? 'check-circle' : 'circle-outline'}
+            size={16}
+            color={met ? '#10B981' : theme.colors.textTertiary}
+        />
+        <Text style={[styles.requirementText, met && styles.requirementMet]}>
+            {label}
+        </Text>
+    </View>
+);
+
+RequirementItem.propTypes = {
+    met: PropTypes.bool,
+    label: PropTypes.string.isRequired,
+};
+
+const PasswordRequirements = ({ password, passwordValidation }) => {
+    if (!password) return null;
+
+    const requirements = passwordValidation.requirements || {};
+
+    return (
+        <View style={styles.requirementsContainer}>
+            <Text style={styles.requirementsTitle}>Password Requirements:</Text>
+            <View style={styles.requirementsGrid}>
+                <RequirementItem met={requirements.minLength} label="10+ characters" />
+                <RequirementItem met={requirements.hasUppercase} label="Uppercase (A-Z)" />
+                <RequirementItem met={requirements.hasLowercase} label="Lowercase (a-z)" />
+                <RequirementItem met={requirements.hasNumber} label="Number (0-9)" />
+                <RequirementItem met={requirements.hasSpecial} label="Special char" />
+                <RequirementItem met={requirements.noSpaces} label="No spaces" />
+                <RequirementItem met={requirements.notCommon} label="Not common" />
+                <RequirementItem met={requirements.noSequential} label="No sequences" />
+                <RequirementItem met={requirements.noRepeating} label="No repeating" />
+                <RequirementItem met={requirements.noPersonalInfo} label="No personal info" />
+            </View>
+        </View>
+    );
+};
+
+PasswordRequirements.propTypes = {
+    password: PropTypes.string.isRequired,
+    passwordValidation: PropTypes.shape({
+        requirements: PropTypes.object,
+    }).isRequired,
+};
+
+export default function SignUpScreen({ navigation, onLogin }) { // NOSONAR
+
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -53,6 +116,7 @@ export default function SignUpScreen({ navigation, onLogin }) {
         [name]
     );
 
+
     const handleRegister = () => {
         // Mark all fields as touched
         setTouched({ name: true, email: true, password: true, confirmPassword: true });
@@ -69,79 +133,35 @@ export default function SignUpScreen({ navigation, onLogin }) {
         }
 
         setErrors({});
-        setIsLoading(true);
+        // REAL API CALL
+        const attemptRegister = async () => {
+            try {
+                await api.register(name, email, password, 'investor');
+                setIsLoading(false);
 
-        // Simulate API call
-        setTimeout(() => {
-            const newUser = registerUser({
-                name,
-                email,
-                password, // In real app, hash this
-            });
+                Alert.alert(
+                    'Account Created!',
+                    `Welcome to SplitFlow, ${name.split(' ')[0]}! Please login to continue.`,
+                    [
+                        {
+                            text: "Login",
+                            onPress: () => navigation.navigate('Login')
+                        }
+                    ]
+                );
+            } catch (err) {
+                setIsLoading(false);
+                const msg = err.response?.data?.message || 'Registration failed. Please try again.';
+                Alert.alert('Registration Error', msg);
+            }
+        };
 
-            setIsLoading(false);
-
-            Alert.alert(
-                'Account Created!',
-                `Welcome to SplitFlow, ${name.split(' ')[0]}!`,
-                [
-                    {
-                        text: "Let's Start",
-                        onPress: () => onLogin && onLogin(newUser.id)
-                    }
-                ]
-            );
-        }, 1500);
+        attemptRegister();
     };
 
     const handleBlur = (field) => {
         setFocusedField(null);
         setTouched(prev => ({ ...prev, [field]: true }));
-    };
-
-    const renderErrorText = (field) => {
-        if (touched[field] && errors[field]) {
-            return <Text style={styles.errorText}>{errors[field]}</Text>;
-        }
-        return null;
-    };
-
-    // Password requirements checklist
-    const PasswordRequirements = () => {
-        if (!password) return null;
-
-        const reqs = passwordValidation.requirements || {};
-
-        const RequirementItem = ({ met, label }) => (
-            <View style={styles.requirementItem}>
-                <MaterialCommunityIcons
-                    name={met ? "check-circle" : "circle-outline"}
-                    size={16}
-                    color={met ? "#10B981" : theme.colors.textTertiary}
-                />
-                <Text style={[styles.requirementText, met && styles.requirementMet]}>
-                    {label}
-                </Text>
-            </View>
-        );
-
-        return (
-            <View style={styles.requirementsContainer}>
-                <Text style={styles.requirementsTitle}>Password Requirements:</Text>
-                <View style={styles.requirementsGrid}>
-                    <RequirementItem met={reqs.minLength} label="10+ characters" />
-                    <RequirementItem met={reqs.hasUppercase} label="Uppercase (A-Z)" />
-                    <RequirementItem met={reqs.hasLowercase} label="Lowercase (a-z)" />
-                    <RequirementItem met={reqs.hasNumber} label="Number (0-9)" />
-                    <RequirementItem met={reqs.hasSpecial} label="Special char" />
-                    <RequirementItem met={reqs.noSpaces} label="No spaces" />
-                    <RequirementItem met={reqs.notCommon} label="Not common" />
-                    <RequirementItem met={reqs.noSequential} label="No sequences" />
-                    <RequirementItem met={reqs.noRepeating} label="No repeating" />
-                    <RequirementItem met={reqs.noPersonalInfo} label="No personal info" />
-                </View>
-            </View>
-        );
     };
 
     return (
@@ -183,7 +203,7 @@ export default function SignUpScreen({ navigation, onLogin }) {
                             <MaterialCommunityIcons
                                 name="account-outline"
                                 size={22}
-                                color={touched.name && !nameValidation.isValid ? '#EF4444' : (focusedField === 'name' ? theme.colors.primary : theme.colors.textTertiary)}
+                                color={getInputIconColor(touched.name && !nameValidation.isValid, focusedField === 'name')}
                             />
                             <TextInput
                                 style={styles.input}
@@ -219,7 +239,7 @@ export default function SignUpScreen({ navigation, onLogin }) {
                             <MaterialCommunityIcons
                                 name="email-outline"
                                 size={22}
-                                color={touched.email && !emailValidation.isValid ? '#EF4444' : (focusedField === 'email' ? theme.colors.primary : theme.colors.textTertiary)}
+                                color={getInputIconColor(touched.email && !emailValidation.isValid, focusedField === 'email')}
                             />
                             <TextInput
                                 style={styles.input}
@@ -256,7 +276,7 @@ export default function SignUpScreen({ navigation, onLogin }) {
                             <MaterialCommunityIcons
                                 name="lock-outline"
                                 size={22}
-                                color={touched.password && !passwordValidation.isValid ? '#EF4444' : (focusedField === 'password' ? theme.colors.primary : theme.colors.textTertiary)}
+                                color={getInputIconColor(touched.password && !passwordValidation.isValid, focusedField === 'password')}
                             />
                             <TextInput
                                 style={styles.input}
@@ -299,8 +319,7 @@ export default function SignUpScreen({ navigation, onLogin }) {
                                     <View style={[
                                         styles.strengthFill,
                                         {
-                                            width: passwordValidation.strength === 'strong' ? '100%' :
-                                                passwordValidation.strength === 'medium' ? '60%' : '30%',
+                                            width: getStrengthWidth(passwordValidation.strength),
                                             backgroundColor: getPasswordStrengthColor(passwordValidation.strength)
                                         }
                                     ]} />
@@ -312,7 +331,7 @@ export default function SignUpScreen({ navigation, onLogin }) {
                         )}
 
                         {/* Password Requirements Checklist */}
-                        <PasswordRequirements />
+                        <PasswordRequirements password={password} passwordValidation={passwordValidation} />
 
                         {/* Confirm Password Input */}
                         <Text style={styles.inputLabel}>Confirm Password <Text style={styles.required}>*</Text></Text>
@@ -324,7 +343,7 @@ export default function SignUpScreen({ navigation, onLogin }) {
                             <MaterialCommunityIcons
                                 name="lock-check-outline"
                                 size={22}
-                                color={touched.confirmPassword && password !== confirmPassword ? '#EF4444' : (focusedField === 'confirm' ? theme.colors.primary : theme.colors.textTertiary)}
+                                color={getInputIconColor(touched.confirmPassword && password !== confirmPassword, focusedField === 'confirm')}
                             />
                             <TextInput
                                 style={styles.input}
@@ -394,6 +413,22 @@ export default function SignUpScreen({ navigation, onLogin }) {
                         <Text style={styles.footerText}>Already have an account?</Text>
                         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
                             <Text style={styles.footerLink}>Sign In</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.legalRow}>
+                        <TouchableOpacity
+                            onPress={() => Alert.alert('Privacy Policy', 'Privacy Policy will be available soon.')}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Text style={styles.legalLink}>Privacy Policy</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.legalSeparator}>•</Text>
+                        <TouchableOpacity
+                            onPress={() => Alert.alert('Terms of Service', 'Terms of Service will be available soon.')}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Text style={styles.legalLink}>Terms of Service</Text>
                         </TouchableOpacity>
                     </View>
                 </ScrollView>
@@ -592,5 +627,21 @@ const styles = StyleSheet.create({
         color: theme.colors.primary,
         fontSize: 14,
         fontWeight: '700',
+    },
+    legalRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 12,
+        gap: 8,
+    },
+    legalLink: {
+        color: theme.colors.textSecondary,
+        fontSize: 12,
+        textDecorationLine: 'underline',
+    },
+    legalSeparator: {
+        color: theme.colors.textTertiary,
+        fontSize: 12,
     },
 });

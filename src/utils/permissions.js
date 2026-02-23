@@ -103,7 +103,6 @@ export const hasPermission = (role, permission) => {
     if (rolePerms.includes(permission)) return true;
 
     // Check inherited permissions (role hierarchy)
-    const roleLevel = ROLE_HIERARCHY[role] || 0;
 
     // If project admin, also include investor permissions
     if (role === ROLES.PROJECT_ADMIN) {
@@ -146,7 +145,7 @@ export const getAllPermissions = (role) => {
  */
 export const isProjectAdmin = (userId, project) => {
     if (!userId || !project) return false;
-    return project.projectAdmins?.includes(userId) || project.createdBy === userId;
+    return !!(project.projectAdmins?.includes(userId) || project.createdBy === userId);
 };
 
 /**
@@ -157,5 +156,5 @@ export const isProjectAdmin = (userId, project) => {
  */
 export const isProjectInvestor = (userId, project) => {
     if (!userId || !project) return false;
-    return project.projectInvestors?.includes(userId);
+    return !!project.projectInvestors?.includes(userId);
 };

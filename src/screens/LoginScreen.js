@@ -12,13 +12,15 @@ import {
     StatusBar,
     Dimensions,
     ScrollView,
+
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme } from '../components/Theme';
-import { userAccounts } from '../data/mockData';
 import { validateLoginForm } from '../utils/validationUtils';
+import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -26,6 +28,8 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
  * LoginScreen with Authentication
  */
 export default function LoginScreen({ navigation, onLogin }) {
+    const { biometricAvailable, biometricEnabled, loginWithBiometric } = useAuth();
+
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -34,9 +38,49 @@ export default function LoginScreen({ navigation, onLogin }) {
     const [passwordFocused, setPasswordFocused] = useState(false);
     const [errors, setErrors] = useState({});
 
+    // Role Toggle State
+    const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
+    // Auto-fill credentials when switching roles
+    const toggleRole = (adminMode) => {
+        setIsSuperAdmin(adminMode);
+        setEmail('');
+        setPassword('');
+        setErrors({});
+    };
+
+    const handleBiometricLogin = async () => {
+        setIsLoading(true);
+        try {
+            const result = await loginWithBiometric();
+            if (result.success) {
+                onLogin?.(result.user);
+            } else if (result.error && result.error !== 'Biometric verification cancelled.') {
+                Alert.alert('Biometric Login', result.error);
+            }
+        } catch {
+            Alert.alert('Error', 'Biometric login failed. Please use your password.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleLogin = () => {
+        if (Object.keys(errors).length > 0) {
+            setErrors({});
+        }
+
         // Validate form
-        const validation = validateLoginForm({ email, password });
+        // Special bypass for 'admin' username OR if in Super Admin mode
+        let validation;
+        if (isSuperAdmin || email.toLowerCase() === 'admin') {
+            validation = { isValid: true };
+            if (!password) {
+                validation = { isValid: false, errors: { password: 'Password is required' } };
+            }
+        } else {
+            validation = validateLoginForm({ email, password });
+        }
 
         if (!validation.isValid) {
             setErrors(validation.errors);
@@ -48,24 +92,38 @@ export default function LoginScreen({ navigation, onLogin }) {
         setErrors({});
         setIsLoading(true);
 
-        // Simulate API delay
-        setTimeout(() => {
-            // Check against stored accounts
-            // STRICT Check against stored accounts (Email/Username + Password)
-            const account = Object.values(userAccounts).find(a =>
-                (a.email.toLowerCase() === email.toLowerCase() || a.email === email) && a.password === password
-            );
+        // REAL API LOGIN
+        const attemptLogin = async () => {
+            try {
+                const response = await api.login(email, password);
+                setIsLoading(false);
 
-            if (account) {
-                // For demo purposes, we accept any password if user exists in mock data
-                // In production, obviously use correct auth!
+                if (response.success) {
+                    const userRole = response.user?.role || 'investor';
+                    if (isSuperAdmin && userRole !== 'super_admin' && userRole !== 'admin') {
+                        Alert.alert('Access Denied', 'This account does not have Admin privileges.');
+                        return;
+                    }
+                    // This triggers the navigate in RootNavigator
+                    onLogin?.(response.user);
+                } else {
+                    Alert.alert('Login Failed', response.message || 'Invalid email or password');
+                }
+            } catch (err) {
                 setIsLoading(false);
-                onLogin?.(account.id);
-            } else {
-                setIsLoading(false);
-                Alert.alert('Login Failed', 'Invalid email or password', [{ text: 'OK' }]);
+                const baseUrl = api.getBaseUrl?.() || 'unknown';
+                if (err.response?.data?.message) {
+                    Alert.alert('Login Failed', err.response.data.message);
+                } else {
+                    Alert.alert(
+                        'Connection Failed',
+                        `Cannot reach server at ${baseUrl}. Make sure the backend is running and your device is on the same network.`,
+                    );
+                }
             }
-        }, 1200);
+        };
+
+        attemptLogin();
     };
 
     return (
@@ -91,10 +149,30 @@ export default function LoginScreen({ navigation, onLogin }) {
                         <Text style={styles.tagline}>Project expenses, simplified</Text>
                     </View>
 
+                    {/* ROLE TOGGLE */}
+                    <View style={styles.roleToggleContainer}>
+                        <TouchableOpacity
+                            style={[styles.roleButton, !isSuperAdmin && styles.roleButtonActive]}
+                            onPress={() => toggleRole(false)}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={[styles.roleButtonText, !isSuperAdmin && styles.roleButtonTextActive]}>User</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.roleButton, isSuperAdmin && styles.roleButtonActive]}
+                            onPress={() => toggleRole(true)}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={[styles.roleButtonText, isSuperAdmin && styles.roleButtonTextActive]}>Admin</Text>
+                        </TouchableOpacity>
+                    </View>
+
                     {/* Login Card */}
                     <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Sign In</Text>
-                        <Text style={styles.cardSubtitle}>Welcome back to your projects</Text>
+                        <Text style={styles.cardTitle}>{isSuperAdmin ? 'Admin Login' : 'Sign In'}</Text>
+                        <Text style={styles.cardSubtitle}>
+                            {isSuperAdmin ? 'Access global dashboard' : 'Sign in through email address, phone number or user name'}
+                        </Text>
 
                         {/* Email Field */}
                         <View style={[styles.inputContainer, emailFocused && styles.inputFocused]}>
@@ -105,7 +183,7 @@ export default function LoginScreen({ navigation, onLogin }) {
                             />
                             <TextInput
                                 style={styles.input}
-                                placeholder="Email address"
+                                placeholder="Email address, phone number, or user name"
                                 placeholderTextColor={theme.colors.textTertiary}
                                 value={email}
                                 onChangeText={setEmail}
@@ -168,13 +246,57 @@ export default function LoginScreen({ navigation, onLogin }) {
                                 )}
                             </LinearGradient>
                         </TouchableOpacity>
+
                     </View>
 
+                    {/* Biometric Login Button */}
+                    {!isSuperAdmin && biometricAvailable && biometricEnabled && (
+                        <View style={styles.biometricSection}>
+                            <View style={styles.biometricDivider}>
+                                <View style={styles.biometricDividerLine} />
+                                <Text style={styles.biometricDividerText}>or</Text>
+                                <View style={styles.biometricDividerLine} />
+                            </View>
+                            <TouchableOpacity
+                                style={styles.biometricButton}
+                                onPress={handleBiometricLogin}
+                                disabled={isLoading}
+                                activeOpacity={0.7}
+                            >
+                                <LinearGradient
+                                    colors={['#10B981', '#059669']}
+                                    style={styles.biometricGradient}
+                                >
+                                    <MaterialCommunityIcons name="fingerprint" size={28} color="white" />
+                                    <Text style={styles.biometricText}>Login with Fingerprint</Text>
+                                </LinearGradient>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
                     {/* Footer / Sign Up Link */}
-                    <View style={styles.footer}>
-                        <Text style={styles.footerText}>Don't have an account?</Text>
-                        <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-                            <Text style={styles.footerLink}>Sign Up</Text>
+                    {!isSuperAdmin && (
+                        <View style={styles.footer}>
+                            <Text style={styles.footerText}>Don't have an account?</Text>
+                            <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
+                                <Text style={styles.footerLink}>Sign Up</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    <View style={styles.legalRow}>
+                        <TouchableOpacity
+                            onPress={() => Alert.alert('Privacy Policy', 'Privacy Policy will be available soon.')}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Text style={styles.legalLink}>Privacy Policy</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.legalSeparator}>•</Text>
+                        <TouchableOpacity
+                            onPress={() => Alert.alert('Terms of Service', 'Terms of Service will be available soon.')}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Text style={styles.legalLink}>Terms of Service</Text>
                         </TouchableOpacity>
                     </View>
 
@@ -249,7 +371,8 @@ const styles = StyleSheet.create({
     card: {
         backgroundColor: theme.colors.surface,
         borderRadius: 24,
-        padding: 24,
+        paddingHorizontal: 24,
+        paddingVertical: 20,
         ...theme.shadows.card,
     },
     cardTitle: {
@@ -287,6 +410,34 @@ const styles = StyleSheet.create({
         color: theme.colors.textPrimary,
         marginLeft: 12,
     },
+    // Role Toggle
+    roleToggleContainer: {
+        flexDirection: 'row',
+        backgroundColor: theme.colors.surfaceAlt,
+        borderRadius: 16,
+        padding: 4,
+        marginBottom: 24,
+        marginHorizontal: 24,
+    },
+    roleButton: {
+        flex: 1,
+        paddingVertical: 12,
+        alignItems: 'center',
+        borderRadius: 12,
+    },
+    roleButtonActive: {
+        backgroundColor: 'white',
+        ...theme.shadows.card,
+    },
+    roleButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: theme.colors.textSecondary,
+    },
+    roleButtonTextActive: {
+        color: theme.colors.primary,
+        fontWeight: '700',
+    },
     // Sign In Button
     signInButton: {
         borderRadius: 14,
@@ -323,6 +474,22 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
     },
+    legalRow: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 12,
+        gap: 8,
+    },
+    legalLink: {
+        color: theme.colors.textSecondary,
+        fontSize: 12,
+        textDecorationLine: 'underline',
+    },
+    legalSeparator: {
+        color: theme.colors.textTertiary,
+        fontSize: 12,
+    },
     // Trust Row
     trustRow: {
         flexDirection: 'row',
@@ -345,5 +512,45 @@ const styles = StyleSheet.create({
         height: 16,
         backgroundColor: theme.colors.border,
         marginHorizontal: 16,
+    },
+    // Biometric
+    biometricSection: {
+        marginTop: 16,
+        alignItems: 'center',
+    },
+    biometricDivider: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+        width: '100%',
+    },
+    biometricDividerLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: theme.colors.border,
+    },
+    biometricDividerText: {
+        marginHorizontal: 12,
+        fontSize: 13,
+        color: theme.colors.textTertiary,
+        fontWeight: '500',
+    },
+    biometricButton: {
+        borderRadius: 14,
+        overflow: 'hidden',
+        width: '100%',
+        ...theme.shadows.soft,
+    },
+    biometricGradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        gap: 10,
+    },
+    biometricText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: 'white',
     },
 });

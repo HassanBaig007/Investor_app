@@ -13,13 +13,57 @@ import {
     Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme } from '../../components/Theme';
 import { api } from '../../services/api';
 import { validateEmail, validateName } from '../../utils/validationUtils';
 
-export default function AddInvestorScreen({ navigation }) {
+const InputField = ({ label, value, onChangeText, placeholder, keyboardType, error, required, secureTextEntry }) => (
+    <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>
+            {label} {required && <Text style={styles.required}>*</Text>}
+        </Text>
+        <TextInput
+            style={[styles.input, error && styles.inputError]}
+            value={value}
+            onChangeText={onChangeText}
+            placeholder={placeholder}
+            placeholderTextColor={theme.colors.textTertiary}
+            keyboardType={keyboardType || 'default'}
+            secureTextEntry={secureTextEntry}
+            autoCapitalize={keyboardType === 'email-address' ? 'none' : 'words'}
+        />
+        {error && <Text style={styles.errorText}>{error}</Text>}
+    </View>
+);
+
+InputField.propTypes = {
+    label: PropTypes.string.isRequired,
+    value: PropTypes.string.isRequired,
+    onChangeText: PropTypes.func.isRequired,
+    placeholder: PropTypes.string,
+    keyboardType: PropTypes.string,
+    error: PropTypes.string,
+    required: PropTypes.bool,
+    secureTextEntry: PropTypes.bool,
+};
+
+// PAN Card format: AAAAA9999A (5 letters, 4 digits, 1 letter)
+const PAN_REGEX = /^[A-Z]{5}\d{4}[A-Z]$/;
+// Aadhar format: 12 digits (can have spaces)
+const AADHAR_REGEX = /^\d{12}$/;
+// IFSC Code format: First 4 chars are bank code (letters), 5th is 0, last 6 are branch code
+const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+// Phone: 10 digits for Indian numbers
+const PHONE_REGEX = /^[6-9]\d{9}$/;
+
+const buildTemporaryPassword = () => {
+    const randomChunk = Math.random().toString(36).slice(-6);
+    return `Tmp#${Date.now().toString().slice(-4)}${randomChunk}A1`;
+};
+
+export default function AddInvestorScreen({ navigation, route }) {
     const [submitting, setSubmitting] = useState(false);
 
     const [formData, setFormData] = useState({
@@ -38,50 +82,43 @@ export default function AddInvestorScreen({ navigation }) {
 
     const [errors, setErrors] = useState({});
 
-    // PAN Card format: AAAAA9999A (5 letters, 4 digits, 1 letter)
-    const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+    const validatePhone = (phone) => {
+        const cleanPhone = phone.replaceAll(/[\s\-+]/g, '');
+        const phoneDigits = cleanPhone.replace(/^91/, '');
+        if (!phoneDigits) return 'Phone number is required';
+        if (PHONE_REGEX.test(phoneDigits)) return null;
+        if (phoneDigits.length !== 10) return 'Phone number must be 10 digits';
+        if (/^[6-9]/.test(phoneDigits)) return 'Invalid phone number format';
+        return 'Indian phone numbers must start with 6, 7, 8, or 9';
+    };
 
-    // Aadhar format: 12 digits (can have spaces)
-    const AADHAR_REGEX = /^[0-9]{12}$/;
+    const validateOptionalField = (value, regex, errorMsg) => {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const cleaned = trimmed.replaceAll(/\s/g, '');
+        return regex.test(cleaned) ? null : errorMsg;
+    };
 
-    // IFSC Code format: First 4 chars are bank code (letters), 5th is 0, last 6 are branch code
-    const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-
-    // Phone: 10 digits for Indian numbers
-    const PHONE_REGEX = /^[6-9][0-9]{9}$/;
+    const validateInvestment = (value) => {
+        if (!value.trim()) return null;
+        const amount = Number.parseInt(value.replaceAll(',', ''), 10);
+        if (Number.isNaN(amount) || amount < 0) return 'Please enter a valid amount';
+        if (amount > 0 && amount < 1000) return 'Minimum investment is ₹1,000';
+        return null;
+    };
 
     const validateForm = () => {
         const newErrors = {};
 
-        // Name validation using utility
         const nameValidation = validateName(formData.name);
-        if (!nameValidation.isValid) {
-            newErrors.name = nameValidation.message;
-        }
+        if (!nameValidation.isValid) newErrors.name = nameValidation.message;
 
-        // Email validation using utility
         const emailValidation = validateEmail(formData.email);
-        if (!emailValidation.isValid) {
-            newErrors.email = emailValidation.message;
-        }
+        if (!emailValidation.isValid) newErrors.email = emailValidation.message;
 
-        // Phone number validation
-        const cleanPhone = formData.phone.replace(/[\s\-+]/g, '');
-        const phoneDigits = cleanPhone.replace(/^91/, ''); // Remove country code if present
+        const phoneError = validatePhone(formData.phone);
+        if (phoneError) newErrors.phone = phoneError;
 
-        if (!phoneDigits) {
-            newErrors.phone = 'Phone number is required';
-        } else if (!PHONE_REGEX.test(phoneDigits)) {
-            if (phoneDigits.length !== 10) {
-                newErrors.phone = 'Phone number must be 10 digits';
-            } else if (!/^[6-9]/.test(phoneDigits)) {
-                newErrors.phone = 'Indian phone numbers must start with 6, 7, 8, or 9';
-            } else {
-                newErrors.phone = 'Invalid phone number format';
-            }
-        }
-
-        // PAN Card validation
         const cleanPan = formData.panCard.trim().toUpperCase();
         if (!cleanPan) {
             newErrors.panCard = 'PAN Card number is required';
@@ -89,39 +126,17 @@ export default function AddInvestorScreen({ navigation }) {
             newErrors.panCard = 'Invalid PAN format (e.g., ABCDE1234F)';
         }
 
-        // Aadhar validation (optional but if provided must be valid)
-        if (formData.aadhar.trim()) {
-            const cleanAadhar = formData.aadhar.replace(/\s/g, '');
-            if (!AADHAR_REGEX.test(cleanAadhar)) {
-                newErrors.aadhar = 'Aadhar must be 12 digits';
-            }
-        }
+        const aadharError = validateOptionalField(formData.aadhar, AADHAR_REGEX, 'Aadhar must be 12 digits');
+        if (aadharError) newErrors.aadhar = aadharError;
 
-        // IFSC Code validation (optional but if provided must be valid)
-        if (formData.ifscCode.trim()) {
-            const cleanIfsc = formData.ifscCode.trim().toUpperCase();
-            if (!IFSC_REGEX.test(cleanIfsc)) {
-                newErrors.ifscCode = 'Invalid IFSC format (e.g., SBIN0001234)';
-            }
-        }
+        const ifscError = validateOptionalField(formData.ifscCode, IFSC_REGEX, 'Invalid IFSC format (e.g., SBIN0001234)');
+        if (ifscError) newErrors.ifscCode = ifscError;
 
-        // Account number validation (optional but if provided must be valid)
-        if (formData.accountNumber.trim()) {
-            const cleanAccount = formData.accountNumber.replace(/\s/g, '');
-            if (!/^[0-9]{9,18}$/.test(cleanAccount)) {
-                newErrors.accountNumber = 'Account number must be 9-18 digits';
-            }
-        }
+        const accountError = validateOptionalField(formData.accountNumber, /^\d{9,18}$/, 'Account number must be 9-18 digits');
+        if (accountError) newErrors.accountNumber = accountError;
 
-        // Initial investment validation (optional but if provided must be valid)
-        if (formData.initialInvestment.trim()) {
-            const amount = parseInt(formData.initialInvestment.replace(/,/g, ''), 10);
-            if (isNaN(amount) || amount < 0) {
-                newErrors.initialInvestment = 'Please enter a valid amount';
-            } else if (amount > 0 && amount < 1000) {
-                newErrors.initialInvestment = 'Minimum investment is ₹1,000';
-            }
-        }
+        const investError = validateInvestment(formData.initialInvestment);
+        if (investError) newErrors.initialInvestment = investError;
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -133,55 +148,64 @@ export default function AddInvestorScreen({ navigation }) {
             return;
         }
 
+        const projectId = route?.params?.projectId;
+        if (!projectId) {
+            Alert.alert('Error', 'Project context is missing. Please navigate from a specific project.');
+            return;
+        }
+
         try {
             setSubmitting(true);
-            const result = await api.addInvestor({
-                ...formData,
-                initialInvestment: parseInt(formData.initialInvestment, 10) || 0,
-            });
+
+            // 1. Register the investor as a user first (if they don't exist)
+            // For this P1 fix, we attempt registration. 
+            // If they exist, we might get a 400 but we can proceed to add them to project if we have their ID.
+            // In a mature app, we'd search for user first.
+            let userId;
+            try {
+                const temporaryPassword = buildTemporaryPassword();
+                const regResult = await api.register(formData.name, formData.email, temporaryPassword, 'investor');
+                userId = regResult.user?.id || regResult.id || regResult._id;
+            } catch (error_) {
+                if (error_.response?.status === 400 || error_.response?.status === 409) {
+                    const users = await api.getUsers();
+                    const existing = (users || []).find(u =>
+                        (u.email || '').toLowerCase() === formData.email.toLowerCase()
+                    );
+                    userId = existing?._id || existing?.id;
+                    if (!userId) {
+                        throw new Error('User already exists but could not resolve user ID.');
+                    }
+                } else {
+                    throw error_;
+                }
+            }
+
+            // 2. Invite to project
+            // Note: We need a userId. If registration failed we might not have it.
+            // This is a P1 limitation: assume new user or provide ID lookup in P2.
+            const result = await api.inviteUserToProject(
+                projectId,
+                userId, // Need real ID here
+                'passive' // Default role for added investors. Could be made configurable.
+            );
+
+            // In a fuller implementation, we might still want to pass the initialInvestment 
+            // and nomineeDetails somewhere, but the inviteUserToProject endpoint doesn't currently accept them.
 
             if (result.success) {
                 Alert.alert(
                     'Success',
-                    'Investor added successfully! They will receive an invitation email.',
+                    'Investor registered and invited successfully!',
                     [{ text: 'OK', onPress: () => navigation.goBack() }]
                 );
             }
         } catch (error) {
-            Alert.alert('Error', 'Failed to add investor');
+            const msg = error.response?.data?.message || error.message;
+            Alert.alert('Error', 'Failed to invite investor: ' + msg);
         } finally {
             setSubmitting(false);
         }
-    };
-
-    const InputField = ({ label, value, onChangeText, placeholder, keyboardType, error, required, secureTextEntry }) => (
-        <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>
-                {label} {required && <Text style={styles.required}>*</Text>}
-            </Text>
-            <TextInput
-                style={[styles.input, error && styles.inputError]}
-                value={value}
-                onChangeText={onChangeText}
-                placeholder={placeholder}
-                placeholderTextColor={theme.colors.textTertiary}
-                keyboardType={keyboardType || 'default'}
-                secureTextEntry={secureTextEntry}
-                autoCapitalize={keyboardType === 'email-address' ? 'none' : 'words'}
-            />
-            {error && <Text style={styles.errorText}>{error}</Text>}
-        </View>
-    );
-
-    InputField.propTypes = {
-        label: PropTypes.string.isRequired,
-        value: PropTypes.string.isRequired,
-        onChangeText: PropTypes.func.isRequired,
-        placeholder: PropTypes.string,
-        keyboardType: PropTypes.string,
-        error: PropTypes.string,
-        required: PropTypes.bool,
-        secureTextEntry: PropTypes.bool,
     };
 
     return (
@@ -365,6 +389,11 @@ AddInvestorScreen.propTypes = {
     navigation: PropTypes.shape({
         goBack: PropTypes.func.isRequired,
     }).isRequired,
+    route: PropTypes.shape({
+        params: PropTypes.shape({
+            projectId: PropTypes.string,
+        }),
+    }),
 };
 
 const styles = StyleSheet.create({

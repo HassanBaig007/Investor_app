@@ -14,15 +14,14 @@ import {
     Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import LinearGradient from 'react-native-linear-gradient';
 import { theme } from '../../components/Theme';
-import { getCurrentUser, projects } from '../../data/mockData';
 import NotificationService from '../../services/notificationService';
+import api from '../../services/api';
 
 export default function CreateProjectInvestorScreen({ navigation }) {
     const [submitting, setSubmitting] = useState(false);
-    const currentUser = getCurrentUser();
     const buttonScale = useRef(new Animated.Value(1)).current;
 
     const [formData, setFormData] = useState({
@@ -70,47 +69,25 @@ export default function CreateProjectInvestorScreen({ navigation }) {
 
         try {
             setSubmitting(true);
-            // Simulate API call
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            // Create new project with creator as admin
-            const newProject = {
-                id: `PRJ${Date.now()}`,
+            // REAL API CALL
+            const projectData = {
                 name: formData.name.trim(),
-                type: formData.type === 'real_estate' ? 'Real Estate' :
-                    formData.type === 'venture_capital' ? 'Venture Capital' :
-                        formData.type === 'fixed_income' ? 'Fixed Income' : 'Private Equity',
-                status: 'active',
-                investorCount: 1,
-                raised: 0,
-                target: parseFloat(formData.target) || 10000000,
-                progress: 0,
-                startDate: new Date().toISOString().split('T')[0],
-                phase: 'Planning',
+                type: formData.type,
                 description: formData.description.trim(),
-                minInvestment: parseFloat(formData.minInvestment) || 100000,
-                expectedReturn: parseFloat(formData.expectedReturn) || 15,
-                duration: parseInt(formData.duration) || 24,
+                targetAmount: Number.parseFloat(formData.target),
+                minInvestment: Number.parseFloat(formData.minInvestment) || 100000,
                 riskLevel: formData.riskLevel,
-                // Creator becomes the admin!
-                createdBy: currentUser.id,
-                projectAdmins: [currentUser.id],
-                projectInvestors: [currentUser.id],
-                spendings: [], // Initialize empty spendings array
-                privilegeChain: {
-                    modificationsRequireAllApproval: true,
-                    approvalThreshold: 100,
-                },
+                returnRate: formData.expectedReturn || '15',
+                duration: formData.duration || '24',
             };
 
-            // Add to projects array (for session persistence)
-            projects.push(newProject);
+            const response = await api.createProject(projectData);
 
             // Send push notification
             NotificationService.sendLocalNotification(
                 '🎉 Project Created!',
                 `"${formData.name}" has been created. You are now the admin.`,
-                { type: 'project_created', projectId: newProject.id }
+                { type: 'project_created', projectId: response._id || response.id }
             );
 
             Alert.alert(
@@ -120,7 +97,7 @@ export default function CreateProjectInvestorScreen({ navigation }) {
                     {
                         text: 'View Project',
                         onPress: () => {
-                            navigation.replace('ProjectDetail', { projectId: newProject.id });
+                            navigation.replace('ProjectDetail', { projectId: response._id || response.id });
                         }
                     },
                     {
@@ -131,6 +108,7 @@ export default function CreateProjectInvestorScreen({ navigation }) {
                 ]
             );
         } catch (error) {
+            console.error('Create project failed:', error);
             Alert.alert('Error', 'Failed to create project. Please try again.');
         } finally {
             setSubmitting(false);
@@ -364,6 +342,7 @@ export default function CreateProjectInvestorScreen({ navigation }) {
 CreateProjectInvestorScreen.propTypes = {
     navigation: PropTypes.shape({
         goBack: PropTypes.func.isRequired,
+        replace: PropTypes.func.isRequired,
     }).isRequired,
 };
 
