@@ -416,6 +416,22 @@ export const api = {
         return normalizeSpending(response.data);
     },
 
+    searchSpendings: async (projectId, options = {}) => {
+        const response = await instance.get('/finance/spendings/search', {
+            params: {
+                projectId,
+                search: options.search,
+                status: options.status,
+                page: options.page,
+                limit: options.limit,
+            }
+        });
+        return {
+            ...response.data,
+            spendings: (response.data.spendings || []).map(normalizeSpending)
+        };
+    },
+
     // ============================================
     // PROJECTS APIs
     // ============================================

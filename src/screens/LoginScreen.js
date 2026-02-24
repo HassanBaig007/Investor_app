@@ -4,6 +4,7 @@ import {
     View,
     Text,
     TextInput,
+    Image,
     TouchableOpacity,
     StyleSheet,
     KeyboardAvoidingView,
@@ -23,6 +24,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const APP_LOGO = require('../../assets/Investor_app_logo.jpeg');
 
 /**
  * LoginScreen with Authentication
@@ -141,8 +143,15 @@ export default function LoginScreen({ navigation, onLogin }) {
                     {/* Logo & Branding */}
                     <View style={styles.header}>
                         <View style={styles.logoBox}>
-                            <LinearGradient colors={['#5B5CFF', '#7C3AED']} style={styles.logoGradient}>
-                                <MaterialCommunityIcons name="chart-donut" size={36} color="white" />
+                            <LinearGradient
+                                colors={['#5B5CFF', '#7C3AED']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.logoGradient}
+                            >
+                                <View style={styles.logoInner}>
+                                    <Image source={APP_LOGO} style={styles.logoImage} />
+                                </View>
                             </LinearGradient>
                         </View>
                         <Text style={styles.appName}>SplitFlow</Text>
@@ -349,12 +358,30 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     logoGradient: {
-        width: 80,
-        height: 80,
-        borderRadius: 24,
+        width: 92,
+        height: 92,
+        borderRadius: 30,
         alignItems: 'center',
         justifyContent: 'center',
-        ...theme.shadows.card,
+        padding: 3,
+        ...theme.shadows.glow,
+    },
+    logoInner: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+        borderRadius: 27,
+        backgroundColor: theme.colors.glass,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.65)',
+    },
+    logoImage: {
+        width: 62,
+        height: 62,
+        borderRadius: 16,
+        resizeMode: 'contain',
     },
     appName: {
         fontSize: 32,

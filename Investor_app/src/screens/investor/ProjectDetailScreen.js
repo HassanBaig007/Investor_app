@@ -29,6 +29,7 @@ import LedgerSelectModal from '../../components/modals/LedgerSelectModal';
 import SubLedgerSelectModal from '../../components/modals/SubLedgerSelectModal';
 import { useProjectData } from '../../hooks/useProjectData';
 import { useSpendingLogic } from '../../hooks/useSpendingLogic';
+import { useSearchSpendings } from '../../hooks/useSearchSpendings';
 import { useLedgerLogic } from '../../hooks/useLedgerLogic';
 import { api } from '../../services/api';
 import { writeExportFile, deleteExportFile, FILE_EXPORT_ENCODING } from '../../utils/fileExport';
@@ -151,6 +152,18 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
         isLoading, onRefresh
     } = useProjectData(navigation, route);
 
+    const projectId = project?._id || project?.id;
+
+    const {
+        searchQuery,
+        setSearchQuery,
+        results: searchResults,
+        isLoading: searchLoading,
+        hasMore: searchHasMore,
+        loadMore: searchLoadMore,
+        refresh: searchRefresh,
+    } = useSearchSpendings(projectId);
+
     // 2. Spending Logic Hook
     const {
         spendingAmount, setSpendingAmount, spendingDescription, setSpendingDescription,
@@ -203,7 +216,6 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
         const selectedDate = parseDateKey(spendingDate) || new Date();
         return new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
     });
-    const [searchQuery, setSearchQuery] = useState('');
 
     // Filters & Views
     const [spendingFilter, setSpendingFilter] = useState('all');
@@ -1337,11 +1349,26 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
                         </View>
                     </View>
 
+                    <View style={styles.fullListSearchSection}>
+                        <View style={styles.fullListSearchWrapper}>
+                            <MaterialCommunityIcons name="magnify" size={20} color={theme.colors.textTertiary} />
+                            <TextInput
+                                style={styles.fullListSearchInput}
+                                placeholder="Search by name, category, date..."
+                                placeholderTextColor={theme.colors.textTertiary}
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                                clearButtonMode="while-editing"
+                            />
+                            {searchLoading && <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginLeft: 8 }} />}
+                        </View>
+                    </View>
+
                     <ScrollView
                         showsVerticalScrollIndicator={false}
                         contentContainerStyle={styles.fullListScrollContent}
                     >
-                        {filteredRecentSpendings.map((spending) => (
+                        {(searchQuery.trim() ? searchResults : filteredRecentSpendings).map((spending) => (
                             <View key={`${spending.id}-full-list`}>
                                 {spending.status === 'pending' && (
                                     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 6 }}>
@@ -1360,6 +1387,27 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
                                 })}
                             </View>
                         ))}
+
+                        {searchQuery.trim() && searchHasMore && (
+                            <TouchableOpacity
+                                style={styles.loadMoreButton}
+                                onPress={searchLoadMore}
+                                disabled={searchLoading}
+                            >
+                                {searchLoading ? (
+                                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                                ) : (
+                                    <Text style={styles.loadMoreButtonText}>Load More</Text>
+                                )}
+                            </TouchableOpacity>
+                        )}
+
+                        {searchQuery.trim() && searchResults.length === 0 && !searchLoading && (
+                            <View style={styles.emptySearchResults}>
+                                <MaterialCommunityIcons name="magnify-close" size={48} color={theme.colors.textTertiary} />
+                                <Text style={styles.emptySearchText}>No spendings found</Text>
+                            </View>
+                        )}
                     </ScrollView>
                 </SafeAreaView>
             </Modal>
@@ -1559,6 +1607,53 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.surface,
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
+    },
+    fullListSearchSection: {
+        paddingHorizontal: 16,
+        paddingBottom: 12,
+        backgroundColor: theme.colors.surface,
+    },
+    fullListSearchWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.surfaceAlt,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        height: 44,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+    },
+    fullListSearchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: theme.colors.textPrimary,
+        marginLeft: 8,
+        paddingVertical: 8,
+    },
+    loadMoreButton: {
+        marginVertical: 20,
+        alignSelf: 'center',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 12,
+        backgroundColor: theme.colors.primaryLight,
+        borderWidth: 1,
+        borderColor: theme.colors.primary + '30',
+    },
+    loadMoreButtonText: {
+        ...theme.typography.bodyMedium,
+        color: theme.colors.primary,
+        fontWeight: '600',
+    },
+    emptySearchResults: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 60,
+    },
+    emptySearchText: {
+        ...theme.typography.body,
+        color: theme.colors.textSecondary,
+        marginTop: 12,
     },
     exitButton: {
         width: 40,
