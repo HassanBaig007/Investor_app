@@ -1,0 +1,128 @@
+﻿node.exe : npm warn using 
+--force Recommended 
+protections disabled.
+At C:\Users\Hassa\AppData\Ro
+aming\npm\npm.ps1:24 char:5
++     & "node$exe"  "$basedi
+r/node_modules/npm/bin/npm-c
+li.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~
+    + CategoryInfo          
+    : NotSpecified: (npm w  
+  arn using ...tions disa   
+ bled.:String) [], Remot    
+eException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 
+
+> splitflowandroid@1.0.1 test
+> jest src/utils/__tests__/permissions.test.js
+
+FAIL src/utils/__tests__/per
+missions.test.js
+  permissions logic
+    hasPermission
+      ΓêÜ should return 
+false if role or permission 
+is missing (3 ms)
+      ΓêÜ should allow 
+everything for SUPER_ADMIN 
+(1 ms)
+      ΓêÜ should allow 
+INVESTOR to view portfolio
+      ΓêÜ should NOT allow 
+INVESTOR to add investors 
+(1 ms)
+      ΓêÜ should allow 
+PROJECT_ADMIN to add 
+investors
+      ΓêÜ should allow 
+PROJECT_ADMIN to inherit 
+INVESTOR permissions (1 ms)
+      ΓêÜ should return 
+false for unknown roles
+    getAllPermissions
+      ΓêÜ should return all 
+permissions for SUPER_ADMIN
+      ΓêÜ should return a 
+specific list for INVESTOR 
+(1 ms)
+      ΓêÜ should include 
+inherited permissions for 
+PROJECT_ADMIN (1 ms)
+    isProjectAdmin
+      ΓêÜ should return 
+true if user is in 
+projectAdmins list
+      ΓêÜ should return 
+true if user is the creator
+      ΓêÜ should return 
+false if user is neither
+      ΓêÜ should return 
+false if inputs are missing 
+(1 ms)
+    isProjectInvestor
+      ΓêÜ should return 
+true if user is in 
+projectInvestors list (1 ms)
+      ΓêÜ should return 
+false if user is not in list
+      ├ù should handle 
+undefined lists (2 ms)
+
+  ΓùÅ permissions logic ΓÇ║ 
+isProjectInvestor ΓÇ║ 
+should handle undefined 
+lists
+
+    expect(received).toBe(ex
+pected) // Object.is 
+equality
+
+    Expected: false
+    Received: undefined
+
+    [0m [90m 100 |[39m   
+      it([32m'should 
+handle undefined 
+lists'[39m[33m,[39m () 
+[33m=>[39m {
+     [90m 101 |[39m       
+      [36mconst[39m 
+project [33m=[39m 
+{}[33m;[39m
+    
+[31m[1m>[22m[39m[90m 
+102 |[39m             expec
+t(isProjectInvestor(userId[
+33m,[39m project))[33m.[3
+9mtoBe([36mfalse[39m)[33m
+;[39m
+     [90m     |[39m       
+                            
+                     
+[31m[1m^[22m[39m
+     [90m 103 |[39m       
+  })[33m;[39m
+     [90m 104 |[39m     
+})[33m;[39m
+     [90m 105 |[39m 
+})[33m;[39m[0m
+
+      at Object.toBe (src/ut
+ils/__tests__/permissions.te
+st.js:102:56)
+
+Test Suites: 1 failed, 1 
+total
+Tests:       1 failed, 16 
+passed, 17 total
+Snapshots:   0 total
+Time:        0.586 s, 
+estimated 1 s
+Ran all test suites 
+matching src/utils/__tests__
+/permissions.test.js.
