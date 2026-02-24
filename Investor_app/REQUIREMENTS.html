@@ -1,0 +1,499 @@
+<h1>InvestFlow - Software Requirements Specification (SRS)</h1>
+<p><strong>Application Name:</strong> InvestFlow (SplitFlow)<br><strong>Version:</strong> 1.0.0<br><strong>Platform:</strong> Cross-platform Mobile Application (iOS, Android, Web)<br><strong>Technology Stack:</strong> React Native, Expo SDK 54<br><strong>Document Date:</strong> January 14, 2026  </p>
+<hr>
+<h2>1. Executive Summary</h2>
+<p>InvestFlow is a comprehensive investment portfolio management mobile application designed for both investors and administrators. The application enables investors to track their investments, view quarterly reports, and participate in project modification approvals, while administrators can manage projects, approve transactions, and monitor overall portfolio performance.</p>
+<hr>
+<h2>2. System Overview</h2>
+<h3>2.1 Purpose</h3>
+<p>The application serves as a centralized platform for managing investment portfolios, facilitating communication between investors and fund administrators, and streamlining approval workflows.</p>
+<h3>2.2 Target Users</h3>
+<table>
+<thead>
+<tr>
+<th>User Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Investor/Client</strong></td>
+<td>Individual investors who have invested in various projects and need to track their portfolio performance, view reports, and participate in voting</td>
+</tr>
+<tr>
+<td><strong>Administrator</strong></td>
+<td>Fund managers who oversee projects, approve/reject transactions, and manage investor relations</td>
+</tr>
+</tbody></table>
+<h3>2.3 Technology Stack</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Technology</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Framework</td>
+<td>React Native 0.81.5</td>
+</tr>
+<tr>
+<td>Development Platform</td>
+<td>Expo SDK 54.0.31</td>
+</tr>
+<tr>
+<td>Navigation</td>
+<td>React Navigation 7.x</td>
+</tr>
+<tr>
+<td>State Management</td>
+<td>React Hooks (useState, useEffect)</td>
+</tr>
+<tr>
+<td>UI Components</td>
+<td>Custom components with LinearGradient, Reanimated</td>
+</tr>
+<tr>
+<td>Icons</td>
+<td>@expo/vector-icons (Ionicons)</td>
+</tr>
+<tr>
+<td>Styling</td>
+<td>StyleSheet with Theme System</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>3. Functional Requirements</h2>
+<h3>3.1 Authentication Module</h3>
+<h4>FR-AUTH-01: Role-Based Login</h4>
+<ul>
+<li>The system shall provide two login options: Investor and Admin</li>
+<li>Users shall select their role before entering credentials</li>
+<li>The system shall validate credentials against role-specific passwords</li>
+<li><strong>Investor Password:</strong> investor123</li>
+<li><strong>Admin Password:</strong> admin123</li>
+</ul>
+<h4>FR-AUTH-02: Login Interface</h4>
+<ul>
+<li>Animated login screen with glassmorphism design</li>
+<li>Role selection cards with visual feedback</li>
+<li>Email/Login and Password input fields</li>
+<li>Secure password entry (masked input)</li>
+<li>Role switching capability before final login</li>
+</ul>
+<h4>FR-AUTH-03: Session Management</h4>
+<ul>
+<li>The system shall maintain user session state</li>
+<li>Logout functionality shall be available from profile menu</li>
+<li>Session shall be cleared upon logout</li>
+</ul>
+<hr>
+<h3>3.2 Investor/Client Module</h3>
+<h4>FR-INV-01: Dashboard</h4>
+<ul>
+<li>Display portfolio summary with total value, invested amount, and returns</li>
+<li>Show returns percentage with visual indicators (positive/negative)</li>
+<li>Quick action buttons for Approvals, Reports, Portfolio, Support</li>
+<li>Display active investments list with progress indicators</li>
+<li>Show recent updates/notifications</li>
+</ul>
+<h4>FR-INV-02: Portfolio Tracking</h4>
+<ul>
+<li>Display current portfolio value</li>
+<li>Show total invested amount</li>
+<li>Calculate and display returns (amount and percentage)</li>
+<li>Visual progress bars for individual investments</li>
+<li>Investment categorization (Real Estate, Venture Capital, etc.)</li>
+</ul>
+<h4>FR-INV-03: Investments</h4>
+<p>Each investment shall display:</p>
+<ul>
+<li>Investment name and type</li>
+<li>Invested amount</li>
+<li>Current value</li>
+<li>Returns percentage</li>
+<li>Project progress percentage</li>
+<li>Start date and expected end date</li>
+</ul>
+<h4>FR-INV-04: Quarterly Reports</h4>
+<ul>
+<li>Access quarterly financial reports by fiscal year</li>
+<li>View Q1, Q2, Q3, Q4 reports</li>
+<li>Report details include:<ul>
+<li>Period covered</li>
+<li>Publication date</li>
+<li>File size</li>
+<li>Performance highlights (Portfolio Growth, Total Returns, Dividends)</li>
+<li>Investment-wise breakdown</li>
+</ul>
+</li>
+<li>Download report functionality</li>
+<li>Share report functionality</li>
+</ul>
+<h4>FR-INV-05: Project Approvals (Voting)</h4>
+<ul>
+<li>View pending project modifications requiring investor vote</li>
+<li>Display modification details:<ul>
+<li>Project name and modification type</li>
+<li>Impact analysis (timeline/financial)</li>
+<li>Current vs proposed changes</li>
+<li>Voting progress and statistics</li>
+</ul>
+</li>
+<li>Cast approve/reject votes</li>
+<li>View voting threshold and current approval percentage</li>
+<li>Show user&#39;s vote status</li>
+</ul>
+<h4>FR-INV-06: Recent Updates</h4>
+<ul>
+<li>View project updates and notifications</li>
+<li>Read/unread status indicators</li>
+<li>Update categorization (reports, milestones, approvals)</li>
+<li>Timestamp and relative time display</li>
+</ul>
+<hr>
+<h3>3.3 Administrator Module</h3>
+<h4>FR-ADM-01: Admin Dashboard</h4>
+<ul>
+<li>Display total Assets Under Management (AUM)</li>
+<li>Show KPI summary:<ul>
+<li>Active Projects count</li>
+<li>Total Investors count</li>
+<li>Pending Approvals count</li>
+<li>Monthly growth percentage</li>
+</ul>
+</li>
+<li>Tab-based navigation (Overview, Approvals, Projects)</li>
+</ul>
+<h4>FR-ADM-02: Quick Actions</h4>
+<ul>
+<li>Create New Project</li>
+<li>Create Announcements</li>
+<li>Generate Reports</li>
+<li>Add Investor</li>
+<li><em>(Note: Currently showing &quot;Coming Soon&quot; for features under development)</em></li>
+</ul>
+<h4>FR-ADM-03: Approval Management</h4>
+<ul>
+<li>View pending withdrawal requests</li>
+<li>View pending investment requests</li>
+<li>Approve/Reject requests with confirmation</li>
+<li>Display request details:<ul>
+<li>Investor name</li>
+<li>Amount</li>
+<li>Project name</li>
+<li>Request timestamp</li>
+</ul>
+</li>
+</ul>
+<h4>FR-ADM-04: Project Management</h4>
+<ul>
+<li>View all projects with status</li>
+<li>Display project details:<ul>
+<li>Name and type</li>
+<li>Current phase</li>
+<li>Investor count</li>
+<li>Amount raised</li>
+<li>Progress percentage</li>
+</ul>
+</li>
+<li>Project status indicators (Active, Completed, etc.)</li>
+<li>Create new project option</li>
+</ul>
+<h4>FR-ADM-05: Activity Feed</h4>
+<ul>
+<li>View recent investor activities</li>
+<li>New investment notifications</li>
+<li>Report publication logs</li>
+</ul>
+<hr>
+<h2>4. Non-Functional Requirements</h2>
+<h3>4.1 Performance</h3>
+<ul>
+<li><strong>NFR-PERF-01:</strong> App shall load within 3 seconds</li>
+<li><strong>NFR-PERF-02:</strong> Animations shall run at 60fps</li>
+<li><strong>NFR-PERF-03:</strong> API responses shall be simulated with configurable delays</li>
+</ul>
+<h3>4.2 User Interface</h3>
+<ul>
+<li><strong>NFR-UI-01:</strong> Consistent dark/light theme across all screens</li>
+<li><strong>NFR-UI-02:</strong> Responsive layout for various screen sizes</li>
+<li><strong>NFR-UI-03:</strong> Smooth transitions between screens (slide animations)</li>
+<li><strong>NFR-UI-04:</strong> Glassmorphism and gradient design elements</li>
+<li><strong>NFR-UI-05:</strong> Accessibility support for screen readers</li>
+</ul>
+<h3>4.3 Security</h3>
+<ul>
+<li><strong>NFR-SEC-01:</strong> Password input shall be masked</li>
+<li><strong>NFR-SEC-02:</strong> Role-based access control (RBAC)</li>
+<li><strong>NFR-SEC-03:</strong> Session isolation between user roles</li>
+</ul>
+<h3>4.4 Compatibility</h3>
+<ul>
+<li><strong>NFR-COMP-01:</strong> iOS 13+ support</li>
+<li><strong>NFR-COMP-02:</strong> Android 8.0+ support</li>
+<li><strong>NFR-COMP-03:</strong> Web browser support (responsive)</li>
+</ul>
+<hr>
+<h2>5. Data Requirements</h2>
+<h3>5.1 User Data</h3>
+<pre><code>User {
+  id: String
+  name: String
+  email: String
+  role: &quot;investor&quot; | &quot;admin&quot;
+  avatar: String (initials)
+}
+</code></pre>
+<h3>5.2 Investment Data</h3>
+<pre><code>Investment {
+  id: String
+  name: String
+  type: &quot;Real Estate&quot; | &quot;Venture Capital&quot; | etc.
+  invested: Number
+  currentValue: Number
+  returns: Number
+  returnsPercent: Number
+  status: &quot;active&quot; | &quot;completed&quot;
+  progress: Number (0-100)
+  startDate: Date
+  expectedEndDate: Date
+}
+</code></pre>
+<h3>5.3 Project Data</h3>
+<pre><code>Project {
+  id: String
+  name: String
+  type: String
+  phase: String
+  status: &quot;active&quot; | &quot;completed&quot; | &quot;pending&quot;
+  investorCount: Number
+  raised: Number
+  target: Number
+  progress: Number
+}
+</code></pre>
+<h3>5.4 Report Data</h3>
+<pre><code>QuarterlyReport {
+  id: String
+  quarter: &quot;Q1&quot; | &quot;Q2&quot; | &quot;Q3&quot; | &quot;Q4&quot;
+  year: String
+  period: String
+  status: &quot;available&quot; | &quot;pending&quot;
+  publishedDate: Date
+  fileSize: String
+  highlights: {
+    portfolioGrowth: Number
+    totalReturns: Number
+    dividendsReceived: Number
+  }
+  investments: Investment[]
+}
+</code></pre>
+<hr>
+<h2>6. Screen Navigation Map</h2>
+<pre><code>App
+├── Login Screen
+│   ├── Role Selection (Investor/Admin)
+│   └── Credentials Entry
+│
+├── Client Flow (Investor)
+│   ├── Client Dashboard
+│   │   ├── Portfolio Summary
+│   │   ├── Quick Actions
+│   │   ├── Investments List
+│   │   └── Recent Updates
+│   ├── Reports Screen
+│   │   └── Quarterly Report Details
+│   └── Approvals Screen
+│       └── Voting Interface
+│
+└── Admin Flow
+    └── Admin Dashboard
+        ├── Overview Tab
+        │   ├── Quick Actions Grid
+        │   └── Activity Feed
+        ├── Approvals Tab
+        │   └── Approval Cards
+        └── Projects Tab
+            └── Project Cards
+</code></pre>
+<hr>
+<h2>7. UI/UX Requirements</h2>
+<h3>7.1 Design System</h3>
+<ul>
+<li><strong>Primary Color:</strong> #6366F1 (Indigo)</li>
+<li><strong>Success Color:</strong> #10B981 (Green)</li>
+<li><strong>Danger Color:</strong> #EF4444 (Red)</li>
+<li><strong>Warning Color:</strong> #F59E0B (Amber)</li>
+<li><strong>Background:</strong> Gradient dark theme (#1a1a2e to #0f3460)</li>
+</ul>
+<h3>7.2 Component Patterns</h3>
+<ul>
+<li>Glass-morphism cards with blur effects</li>
+<li>Linear gradient buttons and accents</li>
+<li>Animated floating orbs on login</li>
+<li>Smooth spring animations for transitions</li>
+<li>Progress bars with gradient fills</li>
+</ul>
+<h3>7.3 Typography</h3>
+<ul>
+<li>Headers: Bold, 24-36px</li>
+<li>Body: Regular, 14-16px</li>
+<li>Captions: Regular, 12px</li>
+<li>Currency: Semibold with ₹ prefix</li>
+</ul>
+<hr>
+<h2>8. Future Enhancements (Roadmap)</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Priority</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Profile Management</td>
+<td>High</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>Settings Screen</td>
+<td>High</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>Push Notifications</td>
+<td>Medium</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>Document Downloads</td>
+<td>High</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>Share Reports</td>
+<td>Medium</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>Portfolio Analytics</td>
+<td>Medium</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>New Project Creation</td>
+<td>High</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>Add Investor Flow</td>
+<td>High</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>Announcements System</td>
+<td>Medium</td>
+<td>Planned</td>
+</tr>
+<tr>
+<td>Real API Integration</td>
+<td>Critical</td>
+<td>Pending</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>9. Dependencies</h2>
+<h3>9.1 NPM Packages</h3>
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Version</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>expo</td>
+<td>~54.0.31</td>
+<td>Development platform</td>
+</tr>
+<tr>
+<td>react</td>
+<td>19.1.0</td>
+<td>UI framework</td>
+</tr>
+<tr>
+<td>react-native</td>
+<td>0.81.5</td>
+<td>Mobile framework</td>
+</tr>
+<tr>
+<td>@react-navigation/native</td>
+<td>^7.1.27</td>
+<td>Navigation</td>
+</tr>
+<tr>
+<td>@react-navigation/native-stack</td>
+<td>^7.9.1</td>
+<td>Stack navigation</td>
+</tr>
+<tr>
+<td>expo-linear-gradient</td>
+<td>^15.0.8</td>
+<td>Gradient UI effects</td>
+</tr>
+<tr>
+<td>react-native-reanimated</td>
+<td>^4.2.1</td>
+<td>Animations</td>
+</tr>
+<tr>
+<td>react-native-safe-area-context</td>
+<td>^5.6.2</td>
+<td>Safe area handling</td>
+</tr>
+<tr>
+<td>react-native-screens</td>
+<td>4.16.0</td>
+<td>Screen optimization</td>
+</tr>
+<tr>
+<td>prop-types</td>
+<td>^15.8.1</td>
+<td>Runtime type checking</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>10. Glossary</h2>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Definition</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>AUM</td>
+<td>Assets Under Management - Total value of investments managed</td>
+</tr>
+<tr>
+<td>KPI</td>
+<td>Key Performance Indicator</td>
+</tr>
+<tr>
+<td>Portfolio</td>
+<td>Collection of investments owned by an investor</td>
+</tr>
+<tr>
+<td>Quarterly Report</td>
+<td>Financial report published every 3 months</td>
+</tr>
+<tr>
+<td>Modification Request</td>
+<td>Proposal to change project terms requiring investor approval</td>
+</tr>
+</tbody></table>
+<hr>
+<p><strong>Document prepared by:</strong> Development Team<br><strong>Last Updated:</strong> January 14, 2026<br><strong>Version:</strong> 1.0</p>
