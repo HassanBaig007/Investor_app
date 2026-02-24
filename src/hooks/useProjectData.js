@@ -45,11 +45,7 @@ export const useProjectData = (navigation, route) => {
             try {
                 usersData = await api.getProjectInviteCandidates(projectId);
             } catch (error_) {
-                if (error_?.response?.status === 403) {
-                    console.log('[useProjectData] User does not have permission to fetch invite candidates (likely passive role).');
-                } else {
-                    console.warn('[useProjectData] Could not fetch project invite candidates:', error_?.message || 'unknown error');
-                }
+                console.warn('Could not fetch project invite candidates:', error_?.message || 'unknown error');
                 const canReadUserDirectory = ['admin', 'project_admin', 'super_admin'].includes(userData?.role);
                 if (canReadUserDirectory) {
                     try {
@@ -227,7 +223,7 @@ export const useProjectData = (navigation, route) => {
                 { type: 'invitation', projectId: projectId }
             );
 
-            Alert.alert('✅ Invitation Sent', `An invitation has been sent to ${member.name} as a ${role} member.`);
+            Alert.alert('✅ Invitation Sent', `An invitation has been sent to ${member.name} as ${role} investor.`);
             // Refresh data to reflect the change
             await fetchData();
             if (onSuccess) onSuccess();

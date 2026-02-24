@@ -215,11 +215,7 @@ export const useProjectData = (navigation, route) => {
 
     const sendInvitation = async (member, role, onSuccess) => {
         try {
-            await api.addInvestor({
-                projectId: projectId,
-                userId: member.id || member._id,
-                role: role,
-            });
+            await api.inviteUserToProject(projectId, member.id || member._id, role);
 
             NotificationService.sendLocalNotification(
                 'Invitation Sent',
@@ -227,7 +223,7 @@ export const useProjectData = (navigation, route) => {
                 { type: 'invitation', projectId: projectId }
             );
 
-            Alert.alert('✅ Member Added', `${member.name} has been added as ${role} investor.`);
+            Alert.alert('✅ Invitation Sent', `An invitation has been sent to ${member.name} as ${role} investor.`);
             // Refresh data to reflect the change
             await fetchData();
             if (onSuccess) onSuccess();

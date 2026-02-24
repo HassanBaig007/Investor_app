@@ -91,7 +91,7 @@ const renderSpendingItemRow = ({
                 onPress={() => onOpenDetail(spending)}
                 activeOpacity={0.7}
             >
-                <View style={[styles.spendingIcon, { backgroundColor: spending.category === 'Service' ? '#EEF2FF' : '#D1FAE5' }]}> 
+                <View style={[styles.spendingIcon, { backgroundColor: spending.category === 'Service' ? '#EEF2FF' : '#D1FAE5' }]}>
                     <MaterialCommunityIcons
                         name={spending.category === 'Service' ? 'account-hard-hat' : 'package-variant'}
                         size={22}
@@ -851,22 +851,22 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
                                         {projectMembers
                                             .filter((member) => String(member?.id || '') !== currentUserId)
                                             .map(member => {
-                                            const uName = getUserName(member.id, member.name || 'Unknown');
-                                            return (
-                                                <TouchableOpacity
-                                                    key={member.id}
-                                                    style={[styles.funderChip, selectedFunder === member.id && styles.funderChipActive]}
-                                                    onPress={() => setSelectedFunder(member.id)}
-                                                >
-                                                    <View style={styles.funderAvatarSmall}>
-                                                        <Text style={styles.funderAvatarText}>{uName.charAt(0)}</Text>
-                                                    </View>
-                                                    <Text style={[styles.funderText, selectedFunder === member.id && styles.funderTextActive]}>
-                                                        {uName.split(' ')[0]}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            );
-                                        })}
+                                                const uName = getUserName(member.id, member.name || 'Unknown');
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={member.id}
+                                                        style={[styles.funderChip, selectedFunder === member.id && styles.funderChipActive]}
+                                                        onPress={() => setSelectedFunder(member.id)}
+                                                    >
+                                                        <View style={styles.funderAvatarSmall}>
+                                                            <Text style={styles.funderAvatarText}>{uName.charAt(0)}</Text>
+                                                        </View>
+                                                        <Text style={[styles.funderText, selectedFunder === member.id && styles.funderTextActive]}>
+                                                            {uName.split(' ')[0]}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
                                     </ScrollView>
                                 </View>
                             )}
@@ -1190,20 +1190,22 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
                 </ScrollView>
             </KeyboardAvoidingView>
 
-            <PendingApprovalsModal
-                visible={showPendingApprovals}
-                onClose={() => setShowPendingApprovals(false)}
-                pendingSpendings={pendingSpendings}
-                rejectedSpendings={rejectedSpendings}
-                currentUser={currentUser}
-                project={project}
-                projectMemberIds={projectMemberIds}
-                onApprove={handleApproveSpending}
-                onReject={handleRejectSpending}
-                actionFeedback={actionFeedback}
-                isPassiveViewer={isPassiveViewer}
-                userAccounts={userAccounts}
-            />
+            {currentUser && (
+                <PendingApprovalsModal
+                    visible={showPendingApprovals}
+                    onClose={() => setShowPendingApprovals(false)}
+                    pendingSpendings={pendingSpendings}
+                    rejectedSpendings={rejectedSpendings}
+                    currentUser={currentUser}
+                    project={project}
+                    projectMemberIds={projectMemberIds}
+                    onApprove={handleApproveSpending}
+                    onReject={handleRejectSpending}
+                    actionFeedback={actionFeedback}
+                    isPassiveViewer={isPassiveViewer}
+                    userAccounts={userAccounts}
+                />
+            )}
 
             <SpendingDetailModal
                 visible={showSpendingDetail !== null}

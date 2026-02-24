@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import {
     View,
     Text,
     ScrollView,
+    SectionList,
     StyleSheet,
     TouchableOpacity,
     StatusBar,
@@ -14,6 +15,7 @@ import {
     Dimensions,
     Animated,
     TextInput,
+    Vibration,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -37,6 +39,9 @@ const FOOTER_TAB_IDS = ['home', 'projects', 'approvals', 'analytics', 'expenses'
 const DASHBOARD_MARKET_PRICE_CAP = 5;
 const DASHBOARD_NEWS_CAP = 3;
 const MODAL_MARKET_PRICE_INITIAL_CAP = 6;
+// Calculate precise tab width for full-width footer
+// Screen Width - PaddingHorizontal (8*2)
+const TAB_WIDTH = (SCREEN_WIDTH - 16) / 5;
 
 const getTrendColor = (trend) => {
     if (typeof trend !== 'string') return theme.colors.secondary;
@@ -102,6 +107,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
 
     // State for profile menu
     const [showProfileMenu, setShowProfileMenu] = useState(false);
+    const [showInvitationsModal, setShowInvitationsModal] = useState(false);
     // State for news modal
     const [showNewsModal, setShowNewsModal] = useState(false);
     // Local state for first-time user info modal (persisted with AsyncStorage)
@@ -205,67 +211,67 @@ export default function InvestorDashboard({ navigation, onLogout }) {
         });
     }, []);
 
+    const fetchDashboardData = useCallback(async () => {
+        // Fetch market data & news independently (non-blocking, always runs)
+        Promise.all([
+            api.getMarketPrices().catch(() => []),
+            api.getNews().catch(() => []),
+        ]).then(([prices, news]) => {
+            setMarketPrices(asArray(prices).filter(Boolean));
+            setNewsItems(asArray(news).filter(Boolean));
+        });
+
+        try {
+            const [projectsData, notificationsData, modificationsData, pendingSpendingApprovals] = await Promise.all([
+                api.getProjects().catch(() => []),
+                api.getNotifications().catch(() => []),
+                api.getModifications().catch(() => []),
+                api.getMyPendingApprovals().catch(() => ({ approvals: [] })),
+            ]);
+
+            // Fetch spendings for each project to compute totals
+            const enrichedProjects = await enrichProjectsWithSpendings(asArray(projectsData));
+
+            setProjects(asArray(enrichedProjects).filter(Boolean));
+            setNotifications(asArray(notificationsData).filter(Boolean));
+
+            // Calculate pending approvals from API data
+            const isSuperAdmin = currentUser?.role === 'super_admin';
+            const pendingMods = asArray(modificationsData).filter((m) => m?.status === 'pending');
+            const pendingModificationApprovals = isSuperAdmin
+                ? pendingMods
+                : pendingMods.filter(m => {
+                    const userId = currentUser?.id || currentUser?._id;
+                    const votesMap = m.votesMap || {};
+                    return !votesMap[userId];
+                });
+
+            const spendingApprovals = asArray(pendingSpendingApprovals?.approvals).filter(Boolean);
+
+            const normalizedModificationApprovals = (pendingModificationApprovals || []).map((m) => ({
+                ...m,
+                type: m.type || 'modification',
+                title: m.title || 'Pending Modification Approval',
+                projectName: m.projectName || 'Project',
+                proposedAt: m.proposedAt || m.createdAt || m.updatedAt,
+            }));
+
+            setPendingApprovals([
+                ...normalizedModificationApprovals,
+                ...spendingApprovals,
+            ]);
+        } catch (err) {
+            console.error('Failed to load dashboard data:', err);
+        }
+    }, [currentUser, enrichProjectsWithSpendings]);
+
     // Refresh data when screen comes into focus
     useFocusEffect(
         useCallback(() => {
             // Reset navigation guard
             isNavigatingRef.current = false;
-
-            const fetchDashboardData = async () => {
-                // Fetch market data & news independently (non-blocking, always runs)
-                Promise.all([
-                    api.getMarketPrices().catch(() => []),
-                    api.getNews().catch(() => []),
-                ]).then(([prices, news]) => {
-                    setMarketPrices(asArray(prices).filter(Boolean));
-                    setNewsItems(asArray(news).filter(Boolean));
-                });
-
-                try {
-                    const [projectsData, notificationsData, modificationsData, pendingSpendingApprovals] = await Promise.all([
-                        api.getProjects().catch(() => []),
-                        api.getNotifications().catch(() => []),
-                        api.getModifications().catch(() => []),
-                        api.getMyPendingApprovals().catch(() => ({ approvals: [] })),
-                    ]);
-
-                    // Fetch spendings for each project to compute totals
-                    const enrichedProjects = await enrichProjectsWithSpendings(asArray(projectsData));
-
-                    setProjects(asArray(enrichedProjects).filter(Boolean));
-                    setNotifications(asArray(notificationsData).filter(Boolean));
-
-                    // Calculate pending approvals from API data
-                    const isSuperAdmin = currentUser?.role === 'super_admin';
-                    const pendingMods = asArray(modificationsData).filter((m) => m?.status === 'pending');
-                    const pendingModificationApprovals = isSuperAdmin
-                        ? pendingMods
-                        : pendingMods.filter(m => {
-                            const userId = currentUser?.id || currentUser?._id;
-                            const votesMap = m.votesMap || {};
-                            return !votesMap[userId];
-                        });
-
-                    const spendingApprovals = asArray(pendingSpendingApprovals?.approvals).filter(Boolean);
-
-                    const normalizedModificationApprovals = (pendingModificationApprovals || []).map((m) => ({
-                        ...m,
-                        type: m.type || 'modification',
-                        title: m.title || 'Pending Modification Approval',
-                        projectName: m.projectName || 'Project',
-                        proposedAt: m.proposedAt || m.createdAt || m.updatedAt,
-                    }));
-
-                    setPendingApprovals([
-                        ...normalizedModificationApprovals,
-                        ...spendingApprovals,
-                    ]);
-                } catch (err) {
-                    console.error('Failed to load dashboard data:', err);
-                }
-            };
             fetchDashboardData();
-        }, [currentUser])
+        }, [fetchDashboardData])
     );
 
     // Data
@@ -390,7 +396,11 @@ export default function InvestorDashboard({ navigation, onLogout }) {
     // Calculate pending invitations
     const myInvitations = safeProjects.flatMap((p) =>
         asArray(p?.pendingInvitations)
-            .filter((inv) => inv && inv.userId === currentUser?.id)
+            .filter((inv) => {
+                if (!inv) return false;
+                const invUserId = inv.userId?._id || inv.userId?.id || inv.userId;
+                return String(invUserId) === String(currentUser?.id || currentUser?._id);
+            })
             .map((inv) => ({ ...inv, project: p }))
     );
 
@@ -408,22 +418,31 @@ export default function InvestorDashboard({ navigation, onLogout }) {
 
     const handleAcceptInvitation = async (invitation) => {
         try {
-            await api.addInvestor({
-                projectId: invitation.project?._id || invitation.project?.id,
-                userId: currentUser.id || currentUser._id,
-                role: invitation.role || 'passive',
-            });
+            const projectId = invitation.project?._id || invitation.project?.id;
+            await api.acceptInvitation(projectId);
             NotificationService.notifyMemberAdded(currentUser.name, invitation.project?.name);
             Alert.alert('🎉 Welcome!', `You have joined ${invitation.project?.name}`);
+
+            // Reload dashboard data live so the new project shows up instantly
+            await fetchDashboardData();
         } catch (err) {
             console.error('Accept invitation failed:', err);
-            Alert.alert('Error', 'Failed to accept invitation.');
+            Alert.alert('Error', err.response?.data?.message || 'Failed to accept invitation.');
         }
     };
 
-    const handleDeclineInvitation = (invitation) => {
-        // Decline is local for now; backend pending invitation system can be added later
-        Alert.alert('Declined', 'Invitation declined.');
+    const handleDeclineInvitation = async (invitation) => {
+        try {
+            const projectId = invitation.project?._id || invitation.project?.id;
+            await api.declineInvitation(projectId);
+            Alert.alert('Declined', 'Invitation declined.');
+
+            // Refetch live from backend to ensure state consistency
+            await fetchDashboardData();
+        } catch (err) {
+            console.error('Decline invitation failed:', err);
+            Alert.alert('Error', err.response?.data?.message || 'Failed to decline invitation.');
+        }
     };
 
     // Project item - Account Book Style with Expandable Menu
@@ -772,7 +791,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                         <Text style={styles.invitationsTitle}>Project Invitations ({myInvitations.length})</Text>
                                     </View>
                                 </LinearGradient>
-                                {myInvitations.map((invitation, index) => (
+                                {myInvitations.slice(0, 1).map((invitation, index) => (
                                     <View key={invitation.id || invitation._id || `${invitation.project?.name || 'invitation'}-${index}`} style={styles.invitationCard}>
                                         <View style={styles.invitationInfo}>
                                             <Text style={styles.invitationProjectName}>{invitation.project.name}</Text>
@@ -796,6 +815,15 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                         </View>
                                     </View>
                                 ))}
+                                {myInvitations.length > 1 && (
+                                    <TouchableOpacity
+                                        style={styles.viewAllBtn}
+                                        onPress={() => setShowInvitationsModal(true)}
+                                    >
+                                        <Text style={styles.viewAllText}>View All {myInvitations.length} Invitations</Text>
+                                        <MaterialCommunityIcons name="arrow-right" size={16} color={theme.colors.primary} />
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         )}
 
@@ -813,7 +841,18 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                             </View>
 
                             {myProjects.length > 0 ? (
-                                myProjects.map((project, index) => renderProjectItem(project, index))
+                                <>
+                                    {myProjects.slice(0, 4).map((project, index) => renderProjectItem(project, index))}
+                                    {myProjects.length > 4 && (
+                                        <TouchableOpacity
+                                            style={styles.viewAllBtn}
+                                            onPress={() => setActiveTab('projects')}
+                                        >
+                                            <Text style={styles.viewAllText}>View All Projects ({myProjects.length})</Text>
+                                            <MaterialCommunityIcons name="arrow-right" size={16} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                    )}
+                                </>
                             ) : (
                                 <View style={styles.emptyState}>
                                     <MaterialCommunityIcons name="briefcase-plus-outline" size={56} color={theme.colors.textTertiary} />
@@ -1022,13 +1061,28 @@ export default function InvestorDashboard({ navigation, onLogout }) {
         }
     };
 
-    // Footer tabs - Approvals in center, Expenses at last
+    // Sliding Indicator Animation
+    const slideAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        const tabIndex = FOOTER_TAB_IDS.indexOf(activeTab);
+        if (tabIndex >= 0) {
+            Animated.spring(slideAnim, {
+                toValue: tabIndex * TAB_WIDTH,
+                tension: 60,
+                friction: 9,
+                useNativeDriver: true,
+            }).start();
+        }
+    }, [activeTab, slideAnim]);
+
+    // Footer tabs with Premium Icon Pairs
     const footerTabs = [
-        { id: 'home', icon: 'home', label: 'Home' },
-        { id: 'projects', icon: 'briefcase-outline', label: 'Projects' },
-        { id: 'approvals', icon: 'check-circle-outline', label: 'Approvals', badge: pendingApprovals.length },
-        { id: 'analytics', icon: 'chart-line', label: 'Analytics' },
-        { id: 'expenses', icon: 'wallet-outline', label: 'Expenses', isNavigation: true, navScreen: 'DailyExpenses' },
+        { id: 'home', icon: 'home-outline', activeIcon: 'home', label: 'Home' },
+        { id: 'projects', icon: 'briefcase-variant-outline', activeIcon: 'briefcase-variant', label: 'Projects' },
+        { id: 'approvals', icon: 'clipboard-check-outline', activeIcon: 'clipboard-check', label: 'Approvals', badge: pendingApprovals.length },
+        { id: 'analytics', icon: 'poll', activeIcon: 'poll', label: 'Analytics' },
+        { id: 'expenses', icon: 'credit-card-outline', activeIcon: 'credit-card', label: 'Expenses', isNavigation: true, navScreen: 'DailyExpenses' },
     ];
 
     return (
@@ -1078,23 +1132,58 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                 <View style={{ height: 100 }} />
             </ScrollView>
 
-            {/* Footer Navigation */}
-            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'android' ? 16 : 20) }]}>
-                {footerTabs.map((tab) => (
-                    (() => {
+            {/* Footer Navigation - Safe Bottom Container */}
+            <View
+                style={{
+                    backgroundColor: '#FFFFFF',
+                    paddingBottom: Platform.OS === 'android' ? Math.max(insets.bottom, 20) : Math.max(insets.bottom, 8),
+                    borderTopWidth: 1,
+                    borderTopColor: theme.colors.border, // WCAG compliant structural boundary
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: -4 },
+                    shadowOpacity: 0.08,
+                    shadowRadius: 16,
+                    elevation: 16, // Strong drop shadow against scrolling content background
+                }}
+            >
+                <LinearGradient
+                    colors={['#FFFFFF', '#F7F9FC', '#EDF2F7']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.footer}
+                >
+                    {/* Visual Sliding Indicator */}
+                    <Animated.View
+                        style={[
+                            styles.slidingIndicator,
+                            {
+                                transform: [{ translateX: slideAnim }],
+                                width: TAB_WIDTH,
+                            },
+                        ]}
+                    >
+                        <LinearGradient
+                            colors={[theme.colors.primaryDark, theme.colors.primary]} // WCAG compliant contrast against white icon
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.slidingIndicatorGradient}
+                        />
+                    </Animated.View>
+
+                    {footerTabs.map((tab) => {
                         const tabAnim = tabAnimationsRef.current[tab.id];
                         const iconAnimatedStyle = {
                             transform: [
                                 {
                                     translateY: tabAnim.interpolate({
                                         inputRange: [0, 1],
-                                        outputRange: [0, -2],
+                                        outputRange: [0, -6], // Slight jump
                                     }),
                                 },
                                 {
                                     scale: tabAnim.interpolate({
                                         inputRange: [0, 1],
-                                        outputRange: [1, 1.08],
+                                        outputRange: [1, 1.15],
                                     }),
                                 },
                             ],
@@ -1103,23 +1192,26 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                         const labelAnimatedStyle = {
                             opacity: tabAnim.interpolate({
                                 inputRange: [0, 1],
-                                outputRange: [0.85, 1],
+                                outputRange: [0, 1],
                             }),
                             transform: [
                                 {
-                                    translateY: tabAnim.interpolate({
+                                    scale: tabAnim.interpolate({
                                         inputRange: [0, 1],
-                                        outputRange: [0, -1],
+                                        outputRange: [0.8, 1],
                                     }),
                                 },
                             ],
                         };
 
+                        const isActive = activeTab === tab.id;
+
                         return (
                             <TouchableOpacity
                                 key={tab.id}
-                                style={styles.footerTab}
+                                style={[styles.footerTab, isActive && styles.footerTabActive]}
                                 onPress={() => {
+                                    Vibration.vibrate(10); // Haptic feedback
                                     if (tab.isNavigation && tab.navScreen) {
                                         navigation.navigate(tab.navScreen);
                                     } else {
@@ -1128,12 +1220,12 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                 }}
                                 activeOpacity={0.7}
                             >
-                                <Animated.View style={iconAnimatedStyle}>
-                                    <View style={[styles.footerTabIcon, activeTab === tab.id && styles.footerTabIconActive]}>
+                                <Animated.View style={[styles.footerIconContainer, iconAnimatedStyle]}>
+                                    <View style={[styles.footerTabIcon]}>
                                         <MaterialCommunityIcons
-                                            name={tab.icon}
-                                            size={24}
-                                            color={activeTab === tab.id ? theme.colors.primary : theme.colors.textTertiary}
+                                            name={isActive ? tab.activeIcon : tab.icon}
+                                            size={26} // Slightly larger icons
+                                            color={isActive ? 'white' : theme.colors.textSecondary} // WCAG: High contrast for inactive
                                         />
                                         {tab.badge > 0 && (
                                             <View style={styles.footerBadge}>
@@ -1144,17 +1236,15 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                         )}
                                     </View>
                                 </Animated.View>
-                                <Animated.Text style={[
-                                    styles.footerTabLabel,
-                                    activeTab === tab.id && styles.footerTabLabelActive,
-                                    labelAnimatedStyle,
-                                ]}>
-                                    {tab.label}
-                                </Animated.Text>
+                                {isActive && (
+                                    <Animated.Text style={[styles.footerTabLabel, labelAnimatedStyle]}>
+                                        {tab.label}
+                                    </Animated.Text>
+                                )}
                             </TouchableOpacity>
                         );
-                    })()
-                ))}
+                    })}
+                </LinearGradient>
             </View>
 
             {/* Profile Menu Modal */}
@@ -1220,9 +1310,143 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                 </View>
             </Modal>
 
+            {/* All Invitations Modal */}
+            <Modal visible={showInvitationsModal} animationType="slide" transparent={true}>
+                <View style={[styles.newsModalContainer, { backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end', margin: 0 }]}>
+                    <View style={{
+                        backgroundColor: theme.colors.background,
+                        borderTopLeftRadius: 32,
+                        borderTopRightRadius: 32,
+                        height: SCREEN_HEIGHT * 0.85,
+                        overflow: 'hidden',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: -10 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 20,
+                        elevation: 20,
+                    }}>
+                        {/* Drag indicator */}
+                        <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 8 }}>
+                            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E0E0E0' }} />
+                        </View>
+
+                        <View style={[styles.newsModalHeader, { paddingTop: 10, paddingBottom: 20, borderBottomWidth: 0 }]}>
+                            <View style={styles.newsModalTitleRow}>
+                                <LinearGradient colors={['#7C3AED', '#5B5CFF']} style={[styles.newsModalIcon, { borderRadius: 16, width: 48, height: 48 }]}>
+                                    <MaterialCommunityIcons name="email-fast-outline" size={24} color="white" />
+                                </LinearGradient>
+                                <View>
+                                    <Text style={[styles.newsModalTitle, { fontSize: 22 }]}>Pending Invitations</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#F59E0B', marginRight: 6 }} />
+                                        <Text style={[styles.newsModalSubtitle, { color: '#F59E0B', fontWeight: '600' }]}>{myInvitations.length} awaiting response</Text>
+                                    </View>
+                                </View>
+                            </View>
+                            <View style={styles.newsModalActions}>
+                                <TouchableOpacity
+                                    style={[styles.newsModalClose, { backgroundColor: '#F3F4F6' }]}
+                                    onPress={() => setShowInvitationsModal(false)}
+                                >
+                                    <Ionicons name="close" size={20} color={theme.colors.textSecondary} />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+
+                        <ScrollView
+                            style={{ flex: 1 }}
+                            contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+                            showsVerticalScrollIndicator={false}
+                        >
+                            {myInvitations.map((invitation, index) => (
+                                <View key={invitation.id || invitation._id || `modal-invitation-${index}`} style={{
+                                    backgroundColor: theme.colors.surface,
+                                    borderRadius: 20,
+                                    padding: 20,
+                                    marginBottom: 16,
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(91, 92, 255, 0.15)',
+                                    shadowColor: '#5B5CFF',
+                                    shadowOffset: { width: 0, height: 8 },
+                                    shadowOpacity: 0.08,
+                                    shadowRadius: 16,
+                                    elevation: 6,
+                                }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                                        <View style={{
+                                            width: 44,
+                                            height: 44,
+                                            borderRadius: 22,
+                                            backgroundColor: '#EEF2FF',
+                                            justifyContent: 'center',
+                                            alignItems: 'center',
+                                            marginRight: 12
+                                        }}>
+                                            <MaterialCommunityIcons name="briefcase-outline" size={22} color="#5B5CFF" />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.colors.textPrimary, marginBottom: 2 }}>{invitation.project.name}</Text>
+                                            <Text style={{ fontSize: 14, color: theme.colors.textSecondary }}>
+                                                Invited as <Text style={{ fontWeight: '700', color: theme.colors.textPrimary }}>{invitation.role === 'active' ? 'Active Member' : 'Passive Member'}</Text>
+                                            </Text>
+                                        </View>
+                                    </View>
+
+                                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                                        <TouchableOpacity
+                                            style={{
+                                                flex: 1,
+                                                backgroundColor: '#FEE2E2',
+                                                paddingVertical: 14,
+                                                borderRadius: 12,
+                                                alignItems: 'center',
+                                            }}
+                                            onPress={async () => {
+                                                await handleDeclineInvitation(invitation);
+                                                if (myInvitations.length <= 1) setShowInvitationsModal(false);
+                                            }}
+                                        >
+                                            <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 15 }}>Decline</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={{
+                                                flex: 1,
+                                                backgroundColor: '#5B5CFF',
+                                                paddingVertical: 14,
+                                                borderRadius: 12,
+                                                alignItems: 'center',
+                                                shadowColor: '#5B5CFF',
+                                                shadowOffset: { width: 0, height: 4 },
+                                                shadowOpacity: 0.3,
+                                                shadowRadius: 8,
+                                                elevation: 4,
+                                            }}
+                                            onPress={async () => {
+                                                await handleAcceptInvitation(invitation);
+                                                if (myInvitations.length <= 1) setShowInvitationsModal(false);
+                                            }}
+                                        >
+                                            <Text style={{ color: 'white', fontWeight: '700', fontSize: 15 }}>Accept</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            ))}
+                            {myInvitations.length === 0 && (
+                                <View style={{ alignItems: 'center', marginTop: 60 }}>
+                                    <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+                                        <MaterialCommunityIcons name="email-open-outline" size={36} color="#9CA3AF" />
+                                    </View>
+                                    <Text style={{ color: theme.colors.textSecondary, fontSize: 16, fontWeight: '500' }}>No pending invitations left</Text>
+                                </View>
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
             {/* News Modal */}
             <Modal visible={showNewsModal} animationType="slide">
-                <View style={styles.newsModalContainer}>
+                <View style={{ flex: 1, backgroundColor: theme.colors.background, height: SCREEN_HEIGHT, width: SCREEN_WIDTH }}>
                     {/* Header */}
                     <View style={styles.newsModalHeader}>
                         <View style={styles.newsModalTitleRow}>
@@ -1254,69 +1478,82 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                         </View>
                     </View>
 
-                    <ScrollView
-                        style={styles.newsModalList}
-                        contentContainerStyle={[
-                            styles.newsModalListContent,
-                            { minHeight: SCREEN_HEIGHT + 420 },
-                        ]}
-                        stickyHeaderIndices={[1]}
-                        nestedScrollEnabled={true}
-                        showsVerticalScrollIndicator={true}
+                    <SectionList
+                        style={{ flex: 1, minHeight: 0 }}
+                        contentContainerStyle={{ paddingBottom: 40 }}
+                        stickySectionHeadersEnabled={true}
+                        sections={[{ title: 'Latest News', data: newsItems }]}
+                        keyExtractor={(item, index) => getMarketItemId(item) || `${item?.title || 'news'}-${index}`}
                         keyboardShouldPersistTaps="handled"
-                    >
-                        <View style={styles.livePricesSection}>
-                            <View style={styles.livePricesHeader}>
-                                <View style={styles.liveIndicator} />
-                                <Text style={styles.livePricesTitle}>Live Market Prices</Text>
-                            </View>
-                            <View style={styles.pricesTable}>
-                                {marketPrices.slice(0, marketPricesModalCap).map((priceItem, priceIndex) => (
-                                    <View key={getMarketItemId(priceItem) || `${priceItem?.name || 'price'}-${priceIndex}`} style={styles.priceTableRow}>
-                                        <Text style={styles.priceTableName}>{priceItem?.name || 'Market Item'}</Text>
-                                        <Text style={styles.priceTableValue}>{priceItem?.price || '-'}</Text>
-                                        <View style={[styles.priceTableChange, { backgroundColor: priceItem?.positive ? '#D1FAE5' : '#FEE2E2' }]}>
-                                            <Text style={[styles.priceTableChangeText, { color: priceItem?.positive ? theme.colors.success : theme.colors.danger }]}>
-                                                {priceItem?.trend || '--'}
-                                            </Text>
-                                        </View>
-                                        {isSuperAdmin && isMarketEditMode && (
-                                            <TouchableOpacity
-                                                style={styles.marketRowEditBtn}
-                                                onPress={() => openEditPriceModal(priceItem)}
-                                            >
-                                                <MaterialCommunityIcons name="pencil" size={16} color={theme.colors.primary} />
-                                            </TouchableOpacity>
-                                        )}
+                        showsVerticalScrollIndicator={true}
+                        bounces={true}
+                        overScrollMode="always"
+                        scrollEnabled={true}
+                        removeClippedSubviews={false}
+                        initialNumToRender={20}
+                        ListHeaderComponent={
+                            <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 }}>
+                                <View style={styles.livePricesSection}>
+                                    <View style={styles.livePricesHeader}>
+                                        <View style={styles.liveIndicator} />
+                                        <Text style={styles.livePricesTitle}>Live Market Prices</Text>
                                     </View>
-                                ))}
+                                    <View style={styles.pricesTable}>
+                                        {marketPrices.slice(0, marketPricesModalCap).map((priceItem, priceIndex) => (
+                                            <View key={getMarketItemId(priceItem) || `${priceItem?.name || 'price'}-${priceIndex}`} style={styles.priceTableRow}>
+                                                <Text style={styles.priceTableName}>{priceItem?.name || 'Market Item'}</Text>
+                                                <Text style={styles.priceTableValue}>{priceItem?.price || '-'}</Text>
+                                                <View style={[styles.priceTableChange, { backgroundColor: priceItem?.positive ? '#D1FAE5' : '#FEE2E2' }]}>
+                                                    <Text style={[styles.priceTableChangeText, { color: priceItem?.positive ? theme.colors.success : theme.colors.danger }]}>
+                                                        {priceItem?.trend || '--'}
+                                                    </Text>
+                                                </View>
+                                                {isSuperAdmin && isMarketEditMode && (
+                                                    <TouchableOpacity
+                                                        style={styles.marketRowEditBtn}
+                                                        onPress={() => openEditPriceModal(priceItem)}
+                                                    >
+                                                        <MaterialCommunityIcons name="pencil" size={16} color={theme.colors.primary} />
+                                                    </TouchableOpacity>
+                                                )}
+                                            </View>
+                                        ))}
+                                    </View>
+                                    {marketPrices.length > MODAL_MARKET_PRICE_INITIAL_CAP && marketPricesModalCap <= MODAL_MARKET_PRICE_INITIAL_CAP && (
+                                        <TouchableOpacity
+                                            style={styles.modalViewMoreBtn}
+                                            onPress={() => setMarketPricesModalCap(marketPrices.length)}
+                                        >
+                                            <Text style={styles.modalViewMoreText}>View More</Text>
+                                            <MaterialCommunityIcons name="chevron-down" size={16} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                    )}
+                                    {marketPrices.length > MODAL_MARKET_PRICE_INITIAL_CAP && marketPricesModalCap > MODAL_MARKET_PRICE_INITIAL_CAP && (
+                                        <TouchableOpacity
+                                            style={styles.modalViewMoreBtn}
+                                            onPress={() => setMarketPricesModalCap(MODAL_MARKET_PRICE_INITIAL_CAP)}
+                                        >
+                                            <Text style={styles.modalViewMoreText}>Show Less</Text>
+                                            <MaterialCommunityIcons name="chevron-up" size={16} color={theme.colors.primary} />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
                             </View>
-                            {marketPrices.length > MODAL_MARKET_PRICE_INITIAL_CAP && marketPricesModalCap <= MODAL_MARKET_PRICE_INITIAL_CAP && (
-                                <TouchableOpacity
-                                    style={styles.modalViewMoreBtn}
-                                    onPress={() => setMarketPricesModalCap(marketPrices.length)}
-                                >
-                                    <Text style={styles.modalViewMoreText}>View More</Text>
-                                    <MaterialCommunityIcons name="chevron-down" size={16} color={theme.colors.primary} />
-                                </TouchableOpacity>
-                            )}
-                            {marketPrices.length > MODAL_MARKET_PRICE_INITIAL_CAP && marketPricesModalCap > MODAL_MARKET_PRICE_INITIAL_CAP && (
-                                <TouchableOpacity
-                                    style={styles.modalViewMoreBtn}
-                                    onPress={() => setMarketPricesModalCap(MODAL_MARKET_PRICE_INITIAL_CAP)}
-                                >
-                                    <Text style={styles.modalViewMoreText}>Show Less</Text>
-                                    <MaterialCommunityIcons name="chevron-up" size={16} color={theme.colors.primary} />
-                                </TouchableOpacity>
-                            )}
-                        </View>
-
-                        <View style={styles.newsStickyHeader}>
-                            <Text style={styles.newsListTitle}>Latest News</Text>
-                        </View>
-
-                        {newsItems.map((item, index) => (
-                            <View key={getMarketItemId(item) || `${item?.title || 'news'}-${index}`} style={styles.newsCard}>
+                        }
+                        renderSectionHeader={() => (
+                            <View style={{
+                                paddingHorizontal: 20,
+                                paddingTop: 12,
+                                paddingBottom: 10,
+                                backgroundColor: theme.colors.background,
+                                borderBottomWidth: 1,
+                                borderBottomColor: theme.colors.border,
+                            }}>
+                                <Text style={styles.newsListTitle}>Latest News</Text>
+                            </View>
+                        )}
+                        renderItem={({ item }) => (
+                            <View style={[styles.newsCard, { marginHorizontal: 20 }]}>
                                 <View style={styles.newsCardHeader}>
                                     <View style={styles.newsCardBadge}>
                                         <Text style={styles.newsCardBadgeText}>{item?.category || 'Update'}</Text>
@@ -1340,8 +1577,14 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                     </TouchableOpacity>
                                 )}
                             </View>
-                        ))}
-                    </ScrollView>
+                        )}
+                        ListEmptyComponent={
+                            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                                <MaterialCommunityIcons name="newspaper-variant-outline" size={48} color={theme.colors.textTertiary} />
+                                <Text style={{ color: theme.colors.textSecondary, marginTop: 12, fontSize: 15 }}>No news available</Text>
+                            </View>
+                        }
+                    />
                 </View>
             </Modal>
 
@@ -1402,6 +1645,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                 </View>
             </Modal>
         </SafeAreaView>
+
     );
 }
 
@@ -2293,73 +2537,88 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         fontSize: 15,
     },
-    // Footer - Enhanced Premium Design
+    // Footer - Clean Sticky Bottom Design
     footer: {
         flexDirection: 'row',
-        backgroundColor: theme.colors.surface,
-        borderTopWidth: 0,
-        paddingTop: 8,
-        paddingHorizontal: 4,
-        // Premium shadow for floating effect
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.06,
-        shadowRadius: 12,
-        elevation: 8,
-        // Subtle rounded corners
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
+        height: 70,
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 8,
+        // Sticky to bottom (no longer absolute/floating)
+        backgroundColor: '#FFFFFF',
+        width: '100%',
+        overflow: 'hidden',
+    },
+    slidingIndicator: {
+        position: 'absolute',
+        top: 0,
+        bottom: 0,
+        left: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 0,
+    },
+    slidingIndicatorGradient: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        transform: [{ translateY: -6 }], // Align with the active icon's lifted position
     },
     footerTab: {
         flex: 1,
         alignItems: 'center',
-        paddingVertical: 4,
+        justifyContent: 'center',
+        height: '100%',
+        zIndex: 1, // Above indicator
+    },
+    footerTabActive: {
+        // No special container style needed, indicator handles bg
+    },
+    footerIconContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     footerTabIcon: {
         position: 'relative',
-        width: 38,
-        height: 38,
+        width: 44,
+        height: 44,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 12,
+        borderRadius: 22,
+        backgroundColor: 'transparent',
+        // Removed individual active background
     },
     footerTabIconActive: {
-        backgroundColor: 'rgba(91, 92, 255, 0.16)',
-        shadowColor: '#5B5CFF',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.22,
-        shadowRadius: 10,
-        elevation: 6,
+        // Removed, using sliding indicator now
     },
     footerBadge: {
         position: 'absolute',
-        top: 4,
-        right: 4,
-        minWidth: 18,
-        height: 18,
-        borderRadius: 9,
-        backgroundColor: '#FF3D57',
+        top: -2,
+        right: -2,
+        minWidth: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: '#EF4444',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 4,
         borderWidth: 2,
-        borderColor: theme.colors.surface,
+        borderColor: '#FFFFFF',
     },
     footerBadgeText: {
         color: 'white',
-        fontSize: 10,
-        fontWeight: '700',
+        fontSize: 9,
+        fontWeight: '800',
     },
     footerTabLabel: {
         fontSize: 10,
-        color: theme.colors.textTertiary,
-        marginTop: 2,
-        fontWeight: '600',
-    },
-    footerTabLabelActive: {
-        color: theme.colors.primary,
+        color: theme.colors.primaryDark, // WCAG compliant for text on white
         fontWeight: '700',
+        position: 'absolute',
+        bottom: 2, // Position inside the floating bar (moved down)
+        zIndex: 20, // Ensure text is above icon elevation
+        elevation: 20,
     },
+    // footerTabLabelActive and simple footerTabLabel are handled in JSX logic now
     // Hamburger Button
     hamburgerButton: {
         width: 38,
