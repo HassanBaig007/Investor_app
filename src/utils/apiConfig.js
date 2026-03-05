@@ -16,9 +16,9 @@ const readFirstDefinedEnv = (...keys) => {
 const getDefaultApiBase = () => 'http://localhost:3000';
 
 export const getApiBaseCandidates = () => {
-    const runtimeOverride = normalizeBaseUrl(globalThis?.__SPLITFLOW_API_URL__);
+    const runtimeOverride = normalizeBaseUrl(globalThis?.__INVESTFLOW_API_URL__);
     const configuredEnvBase = normalizeBaseUrl(
-        readFirstDefinedEnv('SPLITFLOW_API_URL', 'API_BASE_URL')
+        readFirstDefinedEnv('INVESTFLOW_API_URL', 'API_BASE_URL')
     );
 
     return [...new Set([

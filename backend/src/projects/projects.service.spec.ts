@@ -149,13 +149,13 @@ describe('ProjectsService', () => {
       const name = "John's Project @ 2024!";
       const res = service.buildProjectExportFileName(name, 'csv');
       expect(res).toMatch(
-        /^splitflow_john-s-project-2024_details_\d{4}-\d{2}-\d{2}\.csv$/,
+        /^INVESTFLOW_john-s-project-2024_details_\d{4}-\d{2}-\d{2}\.csv$/,
       );
     });
 
     it('should fallback to project if name is empty', () => {
       expect(service.buildProjectExportFileName('', 'xlsx')).toContain(
-        'splitflow_project_details',
+        'INVESTFLOW_project_details',
       );
     });
   });
@@ -209,7 +209,7 @@ describe('ProjectsService', () => {
       );
       expect(res.format).toBe(format);
       if (format === 'csv') {
-        expect(res.content).toContain('SplitFlow Project Details Export');
+        expect(res.content).toContain('INVESTFLOW Project Details Export');
       }
     });
 

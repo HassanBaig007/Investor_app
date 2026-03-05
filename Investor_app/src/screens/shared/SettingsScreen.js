@@ -59,15 +59,14 @@ SettingRow.propTypes = {
 export default function SettingsScreen({ navigation }) {
     const [settings, setSettings] = useState(null);
     const [loading, setLoading] = useState(true);
-    const { user: currentUser, logout, biometricAvailable, biometricEnabled, enableBiometric, disableBiometric } = useAuth();
+    const { user: currentUser, logout } = useAuth();
     const [activeProjectsCount, setActiveProjectsCount] = useState(0);
     const [totalProjectsCount, setTotalProjectsCount] = useState(0);
     const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
     const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
     const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
     const [exportLoading, setExportLoading] = useState(false);
-    const [showBiometricPasswordModal, setShowBiometricPasswordModal] = useState(false);
-    const [biometricPassword, setBiometricPassword] = useState('');
+    
 
     useEffect(() => {
         loadSettings();
@@ -163,18 +162,18 @@ export default function SettingsScreen({ navigation }) {
     // NEW: Share App functionality
     const handleShareApp = async () => {
         try {
-            const shareMessage = `🚀 Check out SplitFlow - The smart expense tracker for collaborative projects!
+            const shareMessage = `🚀 Check out INVESTFLOW - The smart expense tracker for collaborative projects!
 
 💰 Track project expenses together
 📊 Get detailed analytics
 ✅ Multi-member approval system
 📱 Beautiful, easy-to-use interface
 
-Download now: https://splitflow.app/download`;
+Download now: https://placeholder.investflow.example/download`;
 
             const result = await Share.share({
                 message: shareMessage,
-                title: 'Share SplitFlow App',
+                title: 'Share INVESTFLOW App',
             });
 
             if (result.action === Share.sharedAction) {
@@ -265,27 +264,7 @@ Download now: https://splitflow.app/download`;
                         value={settings?.theme === 'dark'}
                         onToggle={(val) => updateSetting('theme', val ? 'dark' : 'light')}
                     />
-                    <SettingRow
-                        icon="finger-print-outline"
-                        title="Biometric Login"
-                        subtitle={biometricAvailable ? 'Use fingerprint or face ID' : 'Not available on this device'}
-                        value={biometricEnabled}
-                        onToggle={async (val) => {
-                            if (val) {
-                                if (!biometricAvailable) {
-                                    Alert.alert('Not Supported', 'Biometric authentication is not available on this device.');
-                                    return;
-                                }
-                                // Ask for password to store credentials
-                                setShowBiometricPasswordModal(true);
-                            } else {
-                                const result = await disableBiometric();
-                                if (result.success) {
-                                    Alert.alert('Biometric Disabled', 'Biometric login has been turned off.');
-                                }
-                            }
-                        }}
-                    />
+                    
                 </View>
 
                 {/* Notifications */}
@@ -494,7 +473,7 @@ Download now: https://splitflow.app/download`;
                         </View>
                         <View style={styles.settingContent}>
                             <Text style={styles.settingTitle}>App Version</Text>
-                            <Text style={styles.settingSubtitle}>2.0.0 - SplitFlow</Text>
+                            <Text style={styles.settingSubtitle}>2.0.0 - INVESTFLOW</Text>
                         </View>
                     </View>
                 </View>
@@ -562,77 +541,7 @@ Download now: https://splitflow.app/download`;
                 </View>
             </Modal>
 
-            {/* Biometric Password Confirmation Modal */}
-            <Modal
-                visible={showBiometricPasswordModal}
-                transparent
-                animationType="fade"
-                onRequestClose={() => {
-                    setShowBiometricPasswordModal(false);
-                    setBiometricPassword('');
-                }}
-            >
-                <View style={styles.modalOverlay}>
-                    <KeyboardAvoidingView
-                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                        style={styles.deleteModalContainer}
-                    >
-                        <View style={styles.deleteModalCard}>
-                            <Text style={styles.deleteModalTitle}>Enable Biometric Login</Text>
-                            <Text style={styles.deleteModalSubtitle}>
-                                Enter your password to securely store your credentials for biometric login.
-                            </Text>
-
-                            <TextInput
-                                style={styles.deleteModalInput}
-                                value={biometricPassword}
-                                onChangeText={setBiometricPassword}
-                                placeholder="Enter your password"
-                                placeholderTextColor={theme.colors.textTertiary}
-                                secureTextEntry
-                                autoFocus
-                            />
-
-                            <View style={styles.deleteModalActions}>
-                                <TouchableOpacity
-                                    style={styles.deleteModalCancelBtn}
-                                    onPress={() => {
-                                        setShowBiometricPasswordModal(false);
-                                        setBiometricPassword('');
-                                    }}
-                                >
-                                    <Text style={styles.deleteModalCancelText}>Cancel</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[
-                                        styles.deleteModalConfirmBtn,
-                                        { backgroundColor: theme.colors.primary },
-                                        !biometricPassword && { opacity: 0.5 },
-                                    ]}
-                                    disabled={!biometricPassword}
-                                    onPress={async () => {
-                                        const email = currentUser?.email;
-                                        if (!email) {
-                                            Alert.alert('Error', 'Could not determine your email.');
-                                            return;
-                                        }
-                                        const result = await enableBiometric(email, biometricPassword);
-                                        setShowBiometricPasswordModal(false);
-                                        setBiometricPassword('');
-                                        if (result.success) {
-                                            Alert.alert('Biometric Enabled', 'You can now login with your fingerprint or face ID.');
-                                        } else {
-                                            Alert.alert('Error', result.error || 'Failed to enable biometric login.');
-                                        }
-                                    }}
-                                >
-                                    <Text style={styles.deleteModalConfirmText}>Enable</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </KeyboardAvoidingView>
-                </View>
-            </Modal>
+            
         </SafeAreaView>
     );
 }

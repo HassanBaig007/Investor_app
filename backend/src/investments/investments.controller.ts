@@ -28,7 +28,7 @@ export class InvestmentsController {
   getQuarterlyReports(@Req() req: AuthenticatedRequest) {
     return this.investmentsService.getQuarterlyReports(req.user.userId);
   }
-
+  
   @Get('reports/:reportId/download')
   downloadQuarterlyReport(
     @Req() req: AuthenticatedRequest,

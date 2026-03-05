@@ -62,7 +62,7 @@ async function runBruteForce(baseUrl, attempts, concurrency) {
   let cursor = 0;
   const statuses = [];
   const body = JSON.stringify({
-    identifier: 'non-existent@splitflow.com',
+    identifier: 'non-existent@investflow.example',
     password: 'WrongPassword123!',
   });
 

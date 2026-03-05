@@ -242,6 +242,21 @@ describe('FinanceService', () => {
       expect(mockSpending.save).toHaveBeenCalled();
     });
 
+    it('throws ForbiddenException when user tries to vote twice', async () => {
+      mockSpending.approvals.set(mockUser.userId, {
+        status: 'approved',
+      });
+
+      await expect(
+        service.voteSpending(
+          mockSpending._id.toString(),
+          mockUser.userId,
+          'approved',
+          mockUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
     it('throws ForbiddenException if user is not an active investor', async () => {
       const guestUser = {
         userId: new Types.ObjectId().toHexString(),

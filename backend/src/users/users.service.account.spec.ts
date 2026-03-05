@@ -110,7 +110,7 @@ describe('UsersService (account + export flows)', () => {
     expect(userModel.findByIdAndUpdate).toHaveBeenNthCalledWith(
       2,
       'u1',
-      { settings: { theme: 'dark' } },
+      { $set: { 'settings.theme': 'dark' } },
       { returnDocument: 'after' },
     );
     expect(userModel.findByIdAndUpdate).toHaveBeenNthCalledWith(
@@ -191,7 +191,6 @@ describe('UsersService (account + export flows)', () => {
         name: 'Deleted User',
         email: 'deleted_u1@removed.local',
         role: 'guest',
-        kycVerified: false,
         deletedAt: expect.any(Date),
       }),
     );
@@ -285,15 +284,29 @@ describe('UsersService (account + export flows)', () => {
   it('registerPushToken stores token and update timestamp', async () => {
     userModel.findByIdAndUpdate.mockReturnValue(mockExecQuery({ _id: 'u1' }));
 
-    const result = await service.registerPushToken('u1', 'ExponentToken');
+    const result = await service.registerPushToken('u1', 'fcm-token-123');
 
     expect(userModel.findByIdAndUpdate).toHaveBeenCalledWith(
       'u1',
       expect.objectContaining({
-        'settings.pushToken': 'ExponentToken',
+        'settings.pushToken': 'fcm-token-123',
         'settings.pushTokenUpdatedAt': expect.any(Date),
       }),
     );
     expect(result).toEqual({ registered: true });
+  });
+
+  it('registerPushToken clears blank tokens', async () => {
+    userModel.findByIdAndUpdate.mockReturnValue(mockExecQuery({ _id: 'u1' }));
+
+    await service.registerPushToken('u1', '   ');
+
+    expect(userModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({
+        'settings.pushToken': null,
+        'settings.pushTokenUpdatedAt': expect.any(Date),
+      }),
+    );
   });
 });

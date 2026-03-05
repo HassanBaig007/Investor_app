@@ -6,7 +6,6 @@ import {
   Matches,
   IsEnum,
   IsIn,
-  IsBoolean,
   IsOptional,
   IsString,
 } from 'class-validator';
@@ -54,8 +53,4 @@ export class RegisterDto {
   @IsEnum(UserRole)
   @IsIn(SELF_ASSIGNABLE_ROLES)
   role: UserRole;
-
-  @IsOptional()
-  @IsBoolean()
-  kycVerified?: boolean;
 }

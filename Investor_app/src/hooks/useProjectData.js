@@ -40,19 +40,26 @@ export const useProjectData = (navigation, route) => {
                 api.getSpendingSummary(projectId).catch(() => null),
             ]);
 
-            // Fetch all users for member management (admin feature)
+            // Fetch all users for member management (creator/admin feature)
             let usersData = [];
-            try {
-                usersData = await api.getProjectInviteCandidates(projectId);
-            } catch (error_) {
-                console.warn('Could not fetch project invite candidates:', error_?.message || 'unknown error');
-                const canReadUserDirectory = ['admin', 'project_admin', 'super_admin'].includes(userData?.role);
-                if (canReadUserDirectory) {
-                    try {
-                        usersData = await api.getUsers();
-                    } catch (error_) {
-                        console.warn('Could not fetch users list:', error_?.message || 'unknown error');
-                        usersData = [];
+            const actorUserId = getRefId(userData);
+            const projectCreatorId = getRefId(projData?.createdBy);
+            const canManageMembers = ['admin', 'project_admin', 'super_admin'].includes(userData?.role)
+                || (Boolean(actorUserId) && Boolean(projectCreatorId) && actorUserId === projectCreatorId);
+
+            if (canManageMembers) {
+                try {
+                    usersData = await api.getProjectInviteCandidates(projectId);
+                } catch (error_) {
+                    console.warn('Could not fetch project invite candidates:', error_?.message || 'unknown error');
+                    const canReadUserDirectory = ['admin', 'project_admin', 'super_admin'].includes(userData?.role);
+                    if (canReadUserDirectory) {
+                        try {
+                            usersData = await api.getUsers();
+                        } catch (error_) {
+                            console.warn('Could not fetch users list:', error_?.message || 'unknown error');
+                            usersData = [];
+                        }
                     }
                 }
             }
@@ -139,9 +146,19 @@ export const useProjectData = (navigation, route) => {
             return 0;
         });
 
+    const pendingInvitationIds = new Set(
+        (project?.pendingInvitations || [])
+            .map((inv) => getRefId(inv?.userId))
+            .filter(Boolean)
+            .map((id) => String(id))
+    );
+
     const availableMembers = allUsers.filter(u => {
-        const userId_ = u._id || u.id;
-        return !projectMemberIds.includes(userId_) && u?.role !== 'super_admin';
+        const userId_ = String(u._id || u.id || '');
+        return Boolean(userId_)
+            && !projectMemberIds.includes(userId_)
+            && !pendingInvitationIds.has(userId_)
+            && u?.role !== 'super_admin';
     }).map(u => ({
         id: u._id || u.id,
         name: u.name || 'Unknown',

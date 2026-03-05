@@ -16,7 +16,6 @@ describe('UsersController', () => {
     findAll: jest.fn(),
     findById: jest.fn(),
     update: jest.fn(),
-    updateKyc: jest.fn(),
     updateSettings: jest.fn(),
     updateNotificationPrefs: jest.fn(),
     deleteAccount: jest.fn(),
@@ -138,26 +137,6 @@ describe('UsersController', () => {
     });
   });
 
-  describe('updateKyc', () => {
-    it('delegates KYC update and sanitizes response', async () => {
-      mockUsersService.updateKyc.mockResolvedValue({
-        _id: 'u1',
-        kyc: { pan: 'ABCDE1234F' },
-        passwordHash: 'hidden',
-      });
-
-      const result = await controller.updateKyc(
-        { user: { userId: 'u1' } },
-        { pan: 'ABCDE1234F' },
-      );
-
-      expect(mockUsersService.updateKyc).toHaveBeenCalledWith('u1', {
-        pan: 'ABCDE1234F',
-      });
-      expect(result.passwordHash).toBeUndefined();
-    });
-  });
-
   // ═══════════════════════════════════════════════════════════════════
   // updateNotificationPrefs
   // ═══════════════════════════════════════════════════════════════════
@@ -258,12 +237,12 @@ describe('UsersController', () => {
 
       const result = await controller.registerPushToken(
         { user: { userId: 'u1' } },
-        { pushToken: 'ExponentPushToken[abc]' },
+        { pushToken: 'fcm-token-123' },
       );
 
       expect(mockUsersService.registerPushToken).toHaveBeenCalledWith(
         'u1',
-        'ExponentPushToken[abc]',
+        'fcm-token-123',
       );
       expect(result.success).toBe(true);
     });

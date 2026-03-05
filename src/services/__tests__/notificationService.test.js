@@ -1,6 +1,27 @@
 import NotificationService from '../notificationService';
 import { api } from '../api';
 
+const mockOnTokenRefreshUnsubscribe = jest.fn();
+const mockOnMessageUnsubscribe = jest.fn();
+const mockOnOpenedUnsubscribe = jest.fn();
+
+const mockMessagingInstance = {
+    requestPermission: jest.fn(),
+    registerDeviceForRemoteMessages: jest.fn(),
+    getToken: jest.fn(),
+    onTokenRefresh: jest.fn(),
+    onMessage: jest.fn(),
+    onNotificationOpenedApp: jest.fn(),
+    getInitialNotification: jest.fn(),
+};
+
+const mockMessagingFactory = jest.fn(() => mockMessagingInstance);
+mockMessagingFactory.AuthorizationStatus = {
+    AUTHORIZED: 1,
+    PROVISIONAL: 2,
+    DENIED: 0,
+};
+
 jest.mock('../api', () => ({
     api: {
         registerPushToken: jest.fn(),
@@ -8,16 +29,45 @@ jest.mock('../api', () => ({
 }));
 
 jest.mock('react-native', () => ({
-    Platform: { OS: 'android' },
+    Platform: { OS: 'android', Version: 34 },
+    PermissionsAndroid: {
+        PERMISSIONS: {
+            POST_NOTIFICATIONS: 'android.permission.POST_NOTIFICATIONS',
+        },
+        RESULTS: {
+            GRANTED: 'granted',
+            DENIED: 'denied',
+        },
+        check: jest.fn(),
+        request: jest.fn(),
+    },
 }));
 
 describe('NotificationService', () => {
     beforeEach(() => {
         jest.restoreAllMocks();
         jest.clearAllMocks();
+
+        jest.spyOn(console, 'log').mockImplementation(() => { });
+        jest.spyOn(console, 'warn').mockImplementation(() => { });
+        jest.spyOn(NotificationService, 'getMessaging').mockReturnValue(mockMessagingFactory);
+
         NotificationService.pushToken = null;
         NotificationService.notificationListener = null;
         NotificationService.responseListener = null;
+        NotificationService.tokenRefreshUnsubscribe = null;
+        NotificationService.foregroundMessageUnsubscribe = null;
+        NotificationService.openedNotificationUnsubscribe = null;
+
+        mockMessagingInstance.requestPermission.mockResolvedValue(
+            mockMessagingFactory.AuthorizationStatus.AUTHORIZED,
+        );
+        mockMessagingInstance.registerDeviceForRemoteMessages.mockResolvedValue(undefined);
+        mockMessagingInstance.getToken.mockResolvedValue('fcm-token-default');
+        mockMessagingInstance.onTokenRefresh.mockReturnValue(mockOnTokenRefreshUnsubscribe);
+        mockMessagingInstance.onMessage.mockReturnValue(mockOnMessageUnsubscribe);
+        mockMessagingInstance.onNotificationOpenedApp.mockReturnValue(mockOnOpenedUnsubscribe);
+        mockMessagingInstance.getInitialNotification.mockResolvedValue(null);
     });
 
     it('initialize returns false when permissions are denied', async () => {
@@ -36,13 +86,16 @@ describe('NotificationService', () => {
         permissionsSpy.mockRestore();
     });
 
-    it('initialize registers push and android channels on success', async () => {
+    it('initialize registers push token and android channels on success', async () => {
         jest
             .spyOn(NotificationService, 'requestPermissions')
             .mockResolvedValue(true);
         const registerSpy = jest
             .spyOn(NotificationService, 'registerForPushNotifications')
-            .mockResolvedValue('ExponentPushToken[x]');
+            .mockResolvedValue('fcm-token-x');
+        const registerBackendSpy = jest
+            .spyOn(NotificationService, 'registerPushTokenWithBackend')
+            .mockResolvedValue(undefined);
         const channelsSpy = jest
             .spyOn(NotificationService, 'setupAndroidChannels')
             .mockResolvedValue(true);
@@ -51,7 +104,9 @@ describe('NotificationService', () => {
 
         expect(result).toBe(true);
         expect(registerSpy).toHaveBeenCalledTimes(1);
+        expect(registerBackendSpy).toHaveBeenCalledWith('fcm-token-x');
         expect(channelsSpy).toHaveBeenCalledTimes(1);
+        expect(mockMessagingInstance.onTokenRefresh).toHaveBeenCalledTimes(1);
     });
 
     it('initialize returns false when initialization throws', async () => {
@@ -67,12 +122,15 @@ describe('NotificationService', () => {
         errorSpy.mockRestore();
     });
 
-    it('registerForPushNotifications returns in-memory push token', async () => {
-        NotificationService.pushToken = 'ExponentPushToken[abc]';
+    it('registerForPushNotifications gets and caches Firebase token', async () => {
+        mockMessagingInstance.getToken.mockResolvedValue('fcm-token-abc');
 
         const token = await NotificationService.registerForPushNotifications();
 
-        expect(token).toBe('ExponentPushToken[abc]');
+        expect(mockMessagingInstance.registerDeviceForRemoteMessages).toHaveBeenCalledTimes(1);
+        expect(mockMessagingInstance.getToken).toHaveBeenCalledTimes(1);
+        expect(token).toBe('fcm-token-abc');
+        expect(NotificationService.pushToken).toBe('fcm-token-abc');
     });
 
     it('setup listener lifecycle updates internal references', () => {
@@ -82,8 +140,12 @@ describe('NotificationService', () => {
         NotificationService.setupListeners(onReceive, onResponse);
         expect(NotificationService.notificationListener).toBe(onReceive);
         expect(NotificationService.responseListener).toBe(onResponse);
+        expect(mockMessagingInstance.onMessage).toHaveBeenCalledTimes(1);
+        expect(mockMessagingInstance.onNotificationOpenedApp).toHaveBeenCalledTimes(1);
 
         NotificationService.removeListeners();
+        expect(mockOnMessageUnsubscribe).toHaveBeenCalledTimes(1);
+        expect(mockOnOpenedUnsubscribe).toHaveBeenCalledTimes(1);
         expect(NotificationService.notificationListener).toBeNull();
         expect(NotificationService.responseListener).toBeNull();
     });
@@ -193,9 +255,9 @@ describe('NotificationService', () => {
         api.registerPushToken.mockRejectedValueOnce(new Error('network error'));
 
         await expect(
-            NotificationService.registerPushTokenWithBackend('ExponentToken'),
+            NotificationService.registerPushTokenWithBackend('fcm-token-123'),
         ).resolves.toBeUndefined();
-        expect(api.registerPushToken).toHaveBeenCalledWith('ExponentToken');
+        expect(api.registerPushToken).toHaveBeenCalledWith('fcm-token-123');
     });
 
     it('registerPushTokenWithBackend skips when token is empty', async () => {

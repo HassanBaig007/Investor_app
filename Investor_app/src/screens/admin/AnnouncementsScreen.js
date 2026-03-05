@@ -12,6 +12,8 @@ import {
     ActivityIndicator,
     Modal,
     Animated,
+    KeyboardAvoidingView,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -297,7 +299,11 @@ export default function AnnouncementsScreen({ navigation }) {
                 onRequestClose={() => setShowModal(false)}
             >
                 <TouchableWithoutFeedback onPress={() => setShowModal(false)}>
-                    <View style={styles.modalOverlay}>
+                    <KeyboardAvoidingView
+                        style={styles.modalOverlay}
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+                    >
                         <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
                             <View style={styles.modalContent}>
                                 <View style={styles.modalHeader}>
@@ -307,7 +313,11 @@ export default function AnnouncementsScreen({ navigation }) {
                                     </TouchableOpacity>
                                 </View>
 
-                                <ScrollView showsVerticalScrollIndicator={false}>
+                                <ScrollView
+                                    showsVerticalScrollIndicator={false}
+                                    keyboardShouldPersistTaps="handled"
+                                    contentContainerStyle={styles.modalScrollContent}
+                                >
                                     <View style={styles.inputGroup}>
                                         <Text style={styles.inputLabel}>Title</Text>
                                         <TextInput
@@ -372,7 +382,7 @@ export default function AnnouncementsScreen({ navigation }) {
                                 </TouchableOpacity>
                             </View>
                         </TouchableWithoutFeedback>
-                    </View>
+                    </KeyboardAvoidingView>
                 </TouchableWithoutFeedback>
             </Modal>
         </SafeAreaView>
@@ -503,6 +513,9 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 24,
         padding: 20,
         maxHeight: '80%',
+    },
+    modalScrollContent: {
+        paddingBottom: 8,
     },
     modalHeader: {
         flexDirection: 'row',

@@ -1,7 +1,7 @@
 module.exports = {
   project: {
     android: {
-      packageName: 'com.lohithms.splitflow',
+      packageName: 'com.lohithms.investflow',
     },
   },
   assets: ['./assets/fonts/'],

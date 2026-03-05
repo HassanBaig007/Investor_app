@@ -15,7 +15,7 @@ describe('Security Token Lifecycle + Account Protection (e2e)', () => {
   let userId: string;
 
   const lifecycleUser = {
-    email: 'security-lifecycle-investor-e2e@splitflow.com',
+    email: 'security-lifecycle-investor-e2e@investflow.example',
     username: 'security_lifecycle_investor_e2e',
     password: 'Password123!',
     name: 'Security Lifecycle Investor',

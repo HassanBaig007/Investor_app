@@ -14,21 +14,15 @@ describe('JwtStrategy', () => {
     expect(getMock).toHaveBeenCalledWith('JWT_SECRET');
   });
 
-  it('falls back when secret is missing and still validates payload', () => {
+  it('throws when JWT secret is missing', () => {
     const getMock = jest.fn().mockReturnValue(undefined);
     const configService = {
       get: getMock,
     } as unknown as ConfigService;
-    const strategy = new JwtStrategy(configService);
 
-    const payload = { sub: 'u1', email: 'u1@example.com', role: 'admin' };
-    const result = strategy.validate(payload);
-
-    expect(result).toEqual({
-      userId: 'u1',
-      email: 'u1@example.com',
-      role: 'admin',
-    });
+    expect(() => new JwtStrategy(configService)).toThrow(
+      'JWT secret is not configured',
+    );
     expect(getMock).toHaveBeenCalledWith('JWT_SECRET');
   });
 });

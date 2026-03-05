@@ -32,6 +32,38 @@ export class UsersService {
     private readonly notificationModel: Model<NotificationDocument>,
   ) {}
 
+  private normalizePushToken(pushToken: unknown): string | null {
+    if (typeof pushToken !== 'string') return null;
+    const normalizedToken = pushToken.trim();
+    if (!normalizedToken) return null;
+    return normalizedToken;
+  }
+
+  private buildSettingsSetUpdate(
+    settingsPatch: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const setUpdate: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(settingsPatch)) {
+      if (value === undefined) continue;
+
+      if (key === 'notifications' && value && typeof value === 'object') {
+        for (const [notificationKey, notificationValue] of Object.entries(
+          value as Record<string, unknown>,
+        )) {
+          if (notificationValue === undefined) continue;
+          setUpdate[`settings.notifications.${notificationKey}`] =
+            notificationValue;
+        }
+        continue;
+      }
+
+      setUpdate[`settings.${key}`] = value;
+    }
+
+    return setUpdate;
+  }
+
   async create(createUserDto: any): Promise<UserDocument> {
     const { password, ...rest } = createUserDto;
     const salt = await bcrypt.genSalt();
@@ -109,24 +141,18 @@ export class UsersService {
       .exec();
   }
 
-  async updateKyc(id: string, kycData: any): Promise<UserDocument | null> {
-    return this.userModel
-      .findByIdAndUpdate(
-        id,
-        { kycData, kycVerified: true },
-        { returnDocument: 'after' },
-      )
-      .exec();
-  }
-
   async updateSettings(
     id: string,
-    settings: any,
+    settings: Record<string, unknown>,
   ): Promise<UserDocument | null> {
-    // Assuming 'settings' field exists or mixing into user root for now if schema isn't strict
-    // Ideally User schema needs a 'settings' prop
+    const setUpdate = this.buildSettingsSetUpdate(settings || {});
+    if (Object.keys(setUpdate).length === 0) {
+      return this.userModel.findById(id).exec();
+    }
+
+    // Use dot-path updates so partial settings updates never overwrite stored push token metadata.
     return this.userModel
-      .findByIdAndUpdate(id, { settings }, { returnDocument: 'after' })
+      .findByIdAndUpdate(id, { $set: setUpdate }, { returnDocument: 'after' })
       .exec();
   }
 
@@ -195,10 +221,8 @@ export class UsersService {
         email: `deleted_${userId}@removed.local`,
         passwordHash: anonymizedHash,
         role: 'guest',
-        kycData: {},
         bankDetails: {},
         settings: {},
-        kycVerified: false,
         deletedAt: new Date(),
       })
       .exec();
@@ -331,11 +355,13 @@ export class UsersService {
    */
   async registerPushToken(
     userId: string,
-    pushToken: string,
+    pushToken?: string,
   ): Promise<{ registered: true }> {
+    const normalizedPushToken = this.normalizePushToken(pushToken);
+
     await this.userModel
       .findByIdAndUpdate(userId, {
-        'settings.pushToken': pushToken,
+        'settings.pushToken': normalizedPushToken,
         'settings.pushTokenUpdatedAt': new Date(),
       })
       .exec();
@@ -376,8 +402,8 @@ export class UsersService {
         'mohmal.com',
       ],
       supportedCurrencies: ['INR', 'USD'],
-      privacyPolicyUrl: 'https://splitflow.app/privacy-policy',
-      termsOfServiceUrl: 'https://splitflow.app/terms-of-service',
+      privacyPolicyUrl: 'https://placeholder.investflow.example/privacy-policy',
+      termsOfServiceUrl: 'https://placeholder.investflow.example/terms-of-service',
     };
   }
 }

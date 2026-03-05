@@ -7,13 +7,11 @@ const config = {
     projectRoot: path.resolve(__dirname),
     watchFolders: [
         path.resolve(__dirname),
-        path.resolve('C:/nm/node_modules'),
     ],
     resolver: {
         unstable_enableSymlinks: true,
         nodeModulesPaths: [
             path.resolve(__dirname, 'node_modules'),
-            path.resolve('C:/nm/node_modules'),
         ],
     },
 };

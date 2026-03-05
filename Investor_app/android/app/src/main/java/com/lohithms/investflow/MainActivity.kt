@@ -1,4 +1,4 @@
-package com.lohithms.splitflow
+package com.lohithms.investflow
 
 import android.os.Build
 import android.os.Bundle

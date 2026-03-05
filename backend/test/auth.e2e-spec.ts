@@ -12,7 +12,7 @@ describe('AuthController (e2e)', () => {
   let refreshToken: string;
 
   const testUser = {
-    email: 'e2e-auth-test@splitflow.com',
+    email: 'e2e-auth-test@investflow.example',
     password: 'MockPassword123!',
     name: 'Mock AuthTester',
     username: 'e2eauthtester',

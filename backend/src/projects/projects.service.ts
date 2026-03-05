@@ -87,71 +87,16 @@ export class ProjectsService {
         .replaceAll(/[^a-z0-9]+/g, '-')
         .replaceAll(/-+/g, '-')
         .replaceAll(/(^-)|(-$)/g, '') || 'project';
-    return `splitflow_${safeProjectName}_details_${dateStamp}.${extension}`;
+    return `INVESTFLOW_${safeProjectName}_details_${dateStamp}.${extension}`;
   }
 
-  async exportProjectDetails(
-    projectId: string,
-    user: any,
-    format: string = 'xlsx',
-  ) {
-    const normalizedFormat = String(format || 'xlsx').toLowerCase();
-    const exportFormat =
-      normalizedFormat === 'excel' ? 'xlsx' : normalizedFormat;
-
-    if (!['csv', 'xlsx'].includes(exportFormat)) {
-      throw new BadRequestException(
-        'Supported export formats are csv and xlsx',
-      );
-    }
-
-    const actor = this.getActorContext(user);
-    const project = (await this.findOne(projectId, actor)) as any;
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
-
-    const projectObjectId = Types.ObjectId.isValid(projectId)
-      ? new Types.ObjectId(projectId)
-      : null;
-
-    const projectMatchExpression = projectObjectId
-      ? {
-        $or: [
-          { project: projectObjectId },
-          {
-            $expr: {
-              $eq: [{ $toString: '$project' }, projectId],
-            },
-          },
-        ],
-      }
-      : {
-        $expr: {
-          $eq: [{ $toString: '$project' }, projectId],
-        },
-      };
-
-    const [ledgers, spendings] = await Promise.all([
-      this.ledgerModel
-        .find(projectMatchExpression as any)
-        .lean()
-        .exec(),
-      this.spendingModel
-        .find(projectMatchExpression as any)
-        .populate('addedBy', 'name email')
-        .populate('fundedBy', 'name email')
-        .populate('ledger', 'name subLedgers')
-        .lean()
-        .exec(),
-    ]);
-
-    const generatedAt = new Date();
+  private buildProjectMembers(project: any): any[] {
     const members = (project?.investors || []).map((investor: any) => {
       const investorUser = investor?.user || {};
       const userId =
         String(investorUser?._id || investorUser?.id || investor?.user || '') ||
         'unknown';
+
       return {
         userId,
         name:
@@ -171,8 +116,7 @@ export class ProjectsService {
       };
     });
 
-    const hasCreator = members.some((member) => member.isCreator);
-    if (!hasCreator && project?.createdBy) {
+    if (!members.some((member) => member.isCreator) && project?.createdBy) {
       members.unshift({
         userId: String(
           project?.createdBy?._id ||
@@ -188,20 +132,78 @@ export class ProjectsService {
       });
     }
 
+    return members;
+  }
+
+  private buildMemberNameMap(members: any[]): Map<string, string> {
     const memberNameById = new Map<string, string>();
     for (const member of members) {
       const memberId = String(member?.userId || '').trim();
       if (!memberId) continue;
       memberNameById.set(memberId, member?.name || 'Unknown');
     }
+    return memberNameById;
+  }
 
+  private buildLedgerNameMap(ledgers: any[]): Map<string, string> {
     const ledgerNameById = new Map<string, string>();
     for (const ledger of ledgers || []) {
-      const ledgerId = String((ledger as any)?._id || '').trim();
+      const ledgerId = String(ledger?._id || '').trim();
       if (!ledgerId) continue;
-      ledgerNameById.set(ledgerId, String((ledger as any)?.name || '').trim());
+      ledgerNameById.set(ledgerId, String(ledger?.name || '').trim());
+    }
+    return ledgerNameById;
+  }
+
+  private normalizeExportFormat(format: string): 'csv' | 'xlsx' {
+    const normalizedFormat = String(format || 'xlsx').toLowerCase();
+    const exportFormat =
+      normalizedFormat === 'excel' ? 'xlsx' : normalizedFormat;
+
+    if (!['csv', 'xlsx'].includes(exportFormat)) {
+      throw new BadRequestException(
+        'Supported export formats are csv and xlsx',
+      );
     }
 
+    return exportFormat as 'csv' | 'xlsx';
+  }
+
+  private async getProjectForExport(projectId: string, user: any): Promise<any> {
+    const actor = this.getActorContext(user);
+    const project = (await this.findOne(projectId, actor)) as any;
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+    return project;
+  }
+
+  private buildProjectMatchExpression(projectId: string): any {
+    const projectObjectId = Types.ObjectId.isValid(projectId)
+      ? new Types.ObjectId(projectId)
+      : null;
+
+    if (projectObjectId) {
+      return {
+        $or: [
+          { project: projectObjectId },
+          {
+            $expr: {
+              $eq: [{ $toString: '$project' }, projectId],
+            },
+          },
+        ],
+      };
+    }
+
+    return {
+      $expr: {
+        $eq: [{ $toString: '$project' }, projectId],
+      },
+    };
+  }
+
+  private calculateSpendingSummary(spendings: any[]) {
     const approvedSpent = spendings
       .filter((spending: any) => String(spending?.status || '') === 'approved')
       .reduce(
@@ -227,20 +229,6 @@ export class ProjectsService {
       (sum: number, spending: any) => sum + Number(spending?.amount || 0),
       0,
     );
-
-    const remainingBudget = Math.max(
-      Number(project?.targetAmount || 0) - approvedSpent,
-      0,
-    );
-    const targetAmount = Number(project?.targetAmount || 0);
-    const budgetUtilizationPct =
-      targetAmount > 0
-        ? Number(((approvedSpent / targetAmount) * 100).toFixed(2))
-        : 0;
-    const averageSpendingAmount =
-      spendings.length > 0
-        ? Number((totalSpent / spendings.length).toFixed(2))
-        : 0;
 
     const statusStats = [
       {
@@ -269,14 +257,21 @@ export class ProjectsService {
       },
     ];
 
-    const memberContributionMap = new Map<
-      string,
-      { memberName: string; transactionCount: number; amount: number }
-    >();
-    const categoryTotalsMap = new Map<string, number>();
-    const ledgerTotalsMap = new Map<string, number>();
+    return {
+      approvedSpent,
+      pendingSpent,
+      rejectedSpent,
+      totalSpent,
+      statusStats,
+    };
+  }
 
-    const spendingRows = spendings
+  private buildSpendingRows(
+    spendings: any[],
+    memberNameById: Map<string, string>,
+    ledgerNameById: Map<string, string>,
+  ) {
+    return spendings
       .slice()
       .sort(
         (first: any, second: any) =>
@@ -286,14 +281,11 @@ export class ProjectsService {
       .map((spending: any) => {
         const approvals = Object.values(spending?.approvals || {});
         const approvedVotes = approvals.filter(
-          (vote: any) =>
-            String(vote?.status || '').toLowerCase() === 'approved',
+          (vote: any) => String(vote?.status || '').toLowerCase() === 'approved',
         ).length;
         const rejectedVotes = approvals.filter(
-          (vote: any) =>
-            String(vote?.status || '').toLowerCase() === 'rejected',
+          (vote: any) => String(vote?.status || '').toLowerCase() === 'rejected',
         ).length;
-        const approvalSummary = `${approvedVotes} approved / ${rejectedVotes} rejected`;
 
         const addedById = this.getRefId(spending?.addedBy);
         const fundedById = this.getRefId(spending?.fundedBy);
@@ -346,9 +338,18 @@ export class ProjectsService {
           paidToPerson: spending?.paidTo?.person || '',
           paidToPlace: spending?.paidTo?.place || '',
           materialType: spending?.materialType || '',
-          approvalSummary,
+          approvalSummary: `${approvedVotes} approved / ${rejectedVotes} rejected`,
         };
       });
+  }
+
+  private calculateTopSpendingBreakdowns(spendingRows: any[]) {
+    const memberContributionMap = new Map<
+      string,
+      { memberName: string; transactionCount: number; amount: number }
+    >();
+    const categoryTotalsMap = new Map<string, number>();
+    const ledgerTotalsMap = new Map<string, number>();
 
     for (const row of spendingRows) {
       const contributor = row.fundedBy || row.addedBy || 'Unassigned';
@@ -374,23 +375,78 @@ export class ProjectsService {
       );
     }
 
-    const topMemberContributions = Array.from(memberContributionMap.values())
-      .sort((first, second) => second.amount - first.amount)
-      .slice(0, 5);
+    return {
+      topMemberContributions: Array.from(memberContributionMap.values())
+        .sort((first, second) => second.amount - first.amount)
+        .slice(0, 5),
+      topCategoryTotals: Array.from(categoryTotalsMap.entries())
+        .map(([name, amount]) => ({ name, amount }))
+        .sort((first, second) => second.amount - first.amount)
+        .slice(0, 5),
+      topLedgerTotals: Array.from(ledgerTotalsMap.entries())
+        .map(([name, amount]) => ({ name, amount }))
+        .sort((first, second) => second.amount - first.amount)
+        .slice(0, 5),
+    };
+  }
 
-    const topCategoryTotals = Array.from(categoryTotalsMap.entries())
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((first, second) => second.amount - first.amount)
-      .slice(0, 5);
+  async exportProjectDetails(
+    projectId: string,
+    user: any,
+    format: string = 'xlsx',
+  ) {
+    const exportFormat = this.normalizeExportFormat(format);
+    const project = await this.getProjectForExport(projectId, user);
+    const projectMatchExpression = this.buildProjectMatchExpression(projectId);
 
-    const topLedgerTotals = Array.from(ledgerTotalsMap.entries())
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((first, second) => second.amount - first.amount)
-      .slice(0, 5);
+    const [ledgers, spendings] = await Promise.all([
+      this.ledgerModel
+        .find(projectMatchExpression)
+        .lean()
+        .exec(),
+      this.spendingModel
+        .find(projectMatchExpression)
+        .populate('addedBy', 'name email')
+        .populate('fundedBy', 'name email')
+        .populate('ledger', 'name subLedgers')
+        .lean()
+        .exec(),
+    ]);
+
+    const generatedAt = new Date();
+    const members = this.buildProjectMembers(project);
+    const memberNameById = this.buildMemberNameMap(members);
+    const ledgerNameById = this.buildLedgerNameMap(ledgers as any[]);
+
+    const { approvedSpent, pendingSpent, rejectedSpent, totalSpent, statusStats } =
+      this.calculateSpendingSummary(spendings as any[]);
+
+    const remainingBudget = Math.max(
+      Number(project?.targetAmount || 0) - approvedSpent,
+      0,
+    );
+    const targetAmount = Number(project?.targetAmount || 0);
+    const budgetUtilizationPct =
+      targetAmount > 0
+        ? Number(((approvedSpent / targetAmount) * 100).toFixed(2))
+        : 0;
+    const averageSpendingAmount =
+      spendings.length > 0
+        ? Number((totalSpent / spendings.length).toFixed(2))
+        : 0;
+
+    const spendingRows = this.buildSpendingRows(
+      spendings as any[],
+      memberNameById,
+      ledgerNameById,
+    );
+
+    const { topMemberContributions, topCategoryTotals, topLedgerTotals } =
+      this.calculateTopSpendingBreakdowns(spendingRows);
 
     if (exportFormat === 'csv') {
       const overviewRows: Array<[string, string]> = [
-        ['SplitFlow Project Details Export', ''],
+        ['INVESTFLOW Project Details Export', ''],
         ['Generated At', generatedAt.toISOString()],
         ['Project Name', String(project?.name || '')],
         ['Project Description', String(project?.description || '')],
@@ -579,10 +635,10 @@ export class ProjectsService {
     }
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'SplitFlow';
+    workbook.creator = 'INVESTFLOW';
     workbook.created = generatedAt;
     workbook.modified = generatedAt;
-    workbook.lastModifiedBy = 'SplitFlow Project Intelligence Engine';
+    workbook.lastModifiedBy = 'INVESTFLOW Project Intelligence Engine';
 
     const applyCellBorder = (cell: any) => {
       cell.border = {
@@ -618,7 +674,7 @@ export class ProjectsService {
       { width: 18 },
     ];
     overviewSheet.mergeCells('A1:G1');
-    overviewSheet.getCell('A1').value = 'SplitFlow Project Details Report';
+    overviewSheet.getCell('A1').value = 'INVESTFLOW Project Details Report';
     overviewSheet.getCell('A1').font = {
       bold: true,
       size: 20,
@@ -1885,6 +1941,9 @@ export class ProjectsService {
     const existingUserIds = [
       this.getRefId(project?.createdBy),
       ...(project?.investors || []).map((inv: any) => this.getRefId(inv?.user)),
+      ...(project?.pendingInvitations || []).map((inv: any) =>
+        this.getRefId(inv?.userId),
+      ),
     ].filter(Boolean);
 
     return this.userModel

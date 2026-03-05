@@ -49,10 +49,6 @@ InputField.propTypes = {
     secureTextEntry: PropTypes.bool,
 };
 
-// PAN Card format: AAAAA9999A (5 letters, 4 digits, 1 letter)
-const PAN_REGEX = /^[A-Z]{5}\d{4}[A-Z]$/;
-// Aadhar format: 12 digits (can have spaces)
-const AADHAR_REGEX = /^\d{12}$/;
 // IFSC Code format: First 4 chars are bank code (letters), 5th is 0, last 6 are branch code
 const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 // Phone: 10 digits for Indian numbers
@@ -70,8 +66,6 @@ export default function AddInvestorScreen({ navigation, route }) {
         name: '',
         email: '',
         phone: '',
-        panCard: '',
-        aadhar: '',
         address: '',
         bankName: '',
         accountNumber: '',
@@ -118,16 +112,6 @@ export default function AddInvestorScreen({ navigation, route }) {
 
         const phoneError = validatePhone(formData.phone);
         if (phoneError) newErrors.phone = phoneError;
-
-        const cleanPan = formData.panCard.trim().toUpperCase();
-        if (!cleanPan) {
-            newErrors.panCard = 'PAN Card number is required';
-        } else if (!PAN_REGEX.test(cleanPan)) {
-            newErrors.panCard = 'Invalid PAN format (e.g., ABCDE1234F)';
-        }
-
-        const aadharError = validateOptionalField(formData.aadhar, AADHAR_REGEX, 'Aadhar must be 12 digits');
-        if (aadharError) newErrors.aadhar = aadharError;
 
         const ifscError = validateOptionalField(formData.ifscCode, IFSC_REGEX, 'Invalid IFSC format (e.g., SBIN0001234)');
         if (ifscError) newErrors.ifscCode = ifscError;
@@ -266,39 +250,6 @@ export default function AddInvestorScreen({ navigation, route }) {
                             onChangeText={(text) => setFormData({ ...formData, address: text })}
                             placeholder="Enter full address"
                         />
-                    </View>
-
-                    {/* KYC Details */}
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Ionicons name="card-outline" size={20} color={theme.colors.primary} />
-                            <Text style={styles.sectionTitle}>KYC Details</Text>
-                        </View>
-
-                        <InputField
-                            label="PAN Card Number"
-                            value={formData.panCard}
-                            onChangeText={(text) => setFormData({ ...formData, panCard: text.toUpperCase() })}
-                            placeholder="ABCDE1234F"
-                            error={errors.panCard}
-                            required
-                        />
-
-                        <InputField
-                            label="Aadhar Number"
-                            value={formData.aadhar}
-                            onChangeText={(text) => setFormData({ ...formData, aadhar: text })}
-                            placeholder="1234 5678 9012"
-                            keyboardType="numeric"
-                            error={errors.aadhar}
-                        />
-
-                        <View style={styles.infoBox}>
-                            <Ionicons name="shield-checkmark" size={18} color={theme.colors.success} />
-                            <Text style={styles.infoBoxText}>
-                                KYC verification will be completed within 24-48 hours after document submission.
-                            </Text>
-                        </View>
                     </View>
 
                     {/* Bank Details */}

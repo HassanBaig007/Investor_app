@@ -10,9 +10,11 @@ import {
   Request,
   Query,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { FinanceService } from './finance.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateSpendingDto } from './dto/create-spending.dto';
+import { VoteSpendingDto } from './dto/vote-spending.dto';
 
 type AuthRequest = {
   user: {
@@ -37,15 +39,16 @@ export class FinanceController {
   }
 
   @Post('spendings/:id/vote')
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   voteSpending(
     @Request() req: AuthRequest,
     @Param('id') id: string,
-    @Body('vote') vote: 'approved' | 'rejected',
+    @Body() voteDto: VoteSpendingDto,
   ) {
     return this.financeService.voteSpending(
       id,
       req.user.userId,
-      vote,
+      voteDto.vote,
       req.user,
     );
   }

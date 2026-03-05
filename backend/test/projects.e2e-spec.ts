@@ -14,7 +14,7 @@ describe('ProjectsController (e2e)', () => {
   let projectId: string;
 
   const adminUser = {
-    email: 'project-admin-e2e@splitflow.com',
+    email: 'project-admin-e2e@investflow.example',
     username: 'project_admin_user',
     password: 'Password123!',
     name: 'Project Admin',
@@ -23,7 +23,7 @@ describe('ProjectsController (e2e)', () => {
   };
 
   const investorUser = {
-    email: 'project-investor-e2e@splitflow.com',
+    email: 'project-investor-e2e@investflow.example',
     username: 'project_investor_user',
     password: 'Password123!',
     name: 'Project Investor',

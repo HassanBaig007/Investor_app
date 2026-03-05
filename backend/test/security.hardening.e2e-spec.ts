@@ -15,14 +15,14 @@ describe('Security Hardening (e2e)', () => {
   let investorId: string;
 
   const investorUser = {
-    email: 'security-hardening-investor-e2e@splitflow.com',
+    email: 'security-hardening-investor-e2e@investflow.example',
     username: 'security_hardening_investor_e2e',
     password: 'Password123!',
     name: 'Security Hardening Investor',
     phone: '+15557770001',
     role: 'investor',
   };
-  const whitelistUserEmail = 'security-hardening-whitelist-e2e@splitflow.com';
+  const whitelistUserEmail = 'security-hardening-whitelist-e2e@investflow.example';
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({

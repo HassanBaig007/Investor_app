@@ -63,16 +63,16 @@ describe('FinanceController', () => {
   describe('voteSpending', () => {
     it('delegates to financeService.voteSpending passing the approval properties', async () => {
       const mockReq = { user: { userId: 'u1', role: 'investor' } };
-      const vote = 'approved';
+      const voteDto = { vote: 'approved' as const };
 
       mockFinanceService.voteSpending.mockResolvedValue({ success: true });
 
-      const result = await controller.voteSpending(mockReq, 's1', vote);
+      const result = await controller.voteSpending(mockReq, 's1', voteDto);
 
       expect(mockFinanceService.voteSpending).toHaveBeenCalledWith(
         's1',
         'u1',
-        vote,
+        voteDto.vote,
         mockReq.user,
       );
       expect(result).toEqual({ success: true });

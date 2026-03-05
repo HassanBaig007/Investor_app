@@ -179,6 +179,28 @@ describe('ModificationsService', () => {
       expect(mockMod.status).toBe('approved');
     });
 
+    it('throws ForbiddenException when user tries to vote twice', async () => {
+      mockMod.votes.set(mockUser.userId, { status: 'approved' });
+
+      await expect(
+        service.vote('m1', mockUser.userId, 'approved', '', mockUser),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('does not count privileged-only approvals toward investor threshold', async () => {
+      mockMod.votes.set('admin1', { status: 'approved' });
+
+      await service.vote(
+        mockMod._id.toHexString(),
+        mockUser.userId,
+        'approved',
+        '',
+        mockUser,
+      );
+
+      expect(mockMod.status).toBe('pending');
+    });
+
     it('throws ForbiddenException if user not an active investor', async () => {
       const guest = {
         userId: new Types.ObjectId().toHexString(),

@@ -123,26 +123,26 @@ describe('AuthContext', () => {
             await latestAuth.dismissInfoModal();
         });
 
-        expect(storage.splitflow_has_logged_in_before).toBe('true');
+        expect(storage.INVESTFLOW_has_logged_in_before).toBe('true');
         expect(latestAuth.showInfoModal).toBe(false);
     });
 
     it('disableBiometric clears persisted credentials and server setting', async () => {
-        storage.splitflow_biometric_enabled = 'true';
-        storage.splitflow_biometric_creds = 'encoded-creds';
+        storage.INVESTFLOW_biometric_enabled = 'true';
+        storage.INVESTFLOW_biometric_creds = 'encoded-creds';
         renderProvider();
         await waitFor(() => expect(latestAuth).toBeDefined());
 
         const result = await latestAuth.disableBiometric();
 
         expect(result).toEqual({ success: true });
-        expect(storage.splitflow_biometric_enabled).toBe('false');
-        expect(storage.splitflow_biometric_creds).toBeUndefined();
+        expect(storage.INVESTFLOW_biometric_enabled).toBe('false');
+        expect(storage.INVESTFLOW_biometric_creds).toBeUndefined();
         expect(api.updateSettings).toHaveBeenCalledWith({ biometricEnabled: false });
     });
 
     it('loginWithBiometric fails when biometric is disabled', async () => {
-        storage.splitflow_biometric_enabled = 'false';
+        storage.INVESTFLOW_biometric_enabled = 'false';
         renderProvider();
         await waitFor(() => expect(latestAuth).toBeDefined());
 
@@ -183,7 +183,7 @@ describe('AuthContext', () => {
     });
 
     it('loginWithBiometric fails when credentials are missing', async () => {
-        storage.splitflow_biometric_enabled = 'true';
+        storage.INVESTFLOW_biometric_enabled = 'true';
         renderProvider();
         await waitFor(() => expect(latestAuth).toBeDefined());
 
@@ -218,7 +218,7 @@ describe('AuthContext', () => {
             await latestAuth.completeOnboarding();
         });
 
-        expect(storage['splitflow_onboarded_user-5']).toBe('true');
+        expect(storage['INVESTFLOW_onboarded_user-5']).toBe('true');
         expect(latestAuth.isOnboarded).toBe(true);
     });
 });

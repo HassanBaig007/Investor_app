@@ -161,7 +161,16 @@ export default function ApprovalsScreen({ navigation }) {
                         }
 
                         return (
-                            <View key={modId} style={styles.modCard}>
+                            <TouchableOpacity
+                                key={modId}
+                                style={styles.modCard}
+                                activeOpacity={0.96}
+                                onPress={() => navigation?.navigate('PendingApprovalDetail', {
+                                    approvalType: 'modification',
+                                    modificationId: modId,
+                                    modification: mod,
+                                })}
+                            >
                                 {/* Header */}
                                 <View style={styles.modHeader}>
                                     <View style={[styles.modTypeIcon, {
@@ -292,7 +301,7 @@ export default function ApprovalsScreen({ navigation }) {
                                         </TouchableOpacity>
                                     </View>
                                 )}
-                            </View>
+                            </TouchableOpacity>
                         );
                     })
                 )}

@@ -163,18 +163,18 @@ export default function SettingsScreen({ navigation }) {
     // NEW: Share App functionality
     const handleShareApp = async () => {
         try {
-            const shareMessage = `🚀 Check out SplitFlow - The smart expense tracker for collaborative projects!
+            const shareMessage = `🚀 Check out INVESTFLOW - The smart expense tracker for collaborative projects!
 
 💰 Track project expenses together
 📊 Get detailed analytics
 ✅ Multi-member approval system
 📱 Beautiful, easy-to-use interface
 
-Download now: https://splitflow.app/download`;
+Download now: https://placeholder.investflow.example/download`;
 
             const result = await Share.share({
                 message: shareMessage,
-                title: 'Share SplitFlow App',
+                title: 'Share INVESTFLOW App',
             });
 
             if (result.action === Share.sharedAction) {
@@ -494,7 +494,7 @@ Download now: https://splitflow.app/download`;
                         </View>
                         <View style={styles.settingContent}>
                             <Text style={styles.settingTitle}>App Version</Text>
-                            <Text style={styles.settingSubtitle}>2.0.0 - SplitFlow</Text>
+                            <Text style={styles.settingSubtitle}>2.0.0 - INVESTFLOW</Text>
                         </View>
                     </View>
                 </View>

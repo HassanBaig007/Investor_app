@@ -1,6 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+apply plugin: "com.google.gms.google-services"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 def keystoreProperties = new Properties()
@@ -19,13 +20,13 @@ def readSigningValue = { String key, String fallbackKey = null ->
     return normalized ? normalized : null
 }
 
-def releaseStoreFile = readSigningValue("SPLITFLOW_UPLOAD_STORE_FILE", "UPLOAD_STORE_FILE")
-def releaseStorePassword = readSigningValue("SPLITFLOW_UPLOAD_STORE_PASSWORD", "UPLOAD_STORE_PASSWORD")
-def releaseKeyAlias = readSigningValue("SPLITFLOW_UPLOAD_KEY_ALIAS", "UPLOAD_KEY_ALIAS")
-def releaseKeyPassword = readSigningValue("SPLITFLOW_UPLOAD_KEY_PASSWORD", "UPLOAD_KEY_PASSWORD")
+def releaseStoreFile = readSigningValue("INVESTFLOW_UPLOAD_STORE_FILE", "UPLOAD_STORE_FILE")
+def releaseStorePassword = readSigningValue("INVESTFLOW_UPLOAD_STORE_PASSWORD", "UPLOAD_STORE_PASSWORD")
+def releaseKeyAlias = readSigningValue("INVESTFLOW_UPLOAD_KEY_ALIAS", "UPLOAD_KEY_ALIAS")
+def releaseKeyPassword = readSigningValue("INVESTFLOW_UPLOAD_KEY_PASSWORD", "UPLOAD_KEY_PASSWORD")
 
 def hasReleaseSigning = [releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it }
-def allowDebugSigningForRelease = (readSigningValue("SPLITFLOW_ALLOW_DEBUG_RELEASE_SIGNING") ?: "false").toBoolean()
+def allowDebugSigningForRelease = (readSigningValue("INVESTFLOW_ALLOW_DEBUG_RELEASE_SIGNING") ?: "false").toBoolean()
 def requestedTaskNames = gradle.startParameter.taskNames.collect { String.valueOf(it).toLowerCase() }
 def isReleaseTaskRequested = requestedTaskNames.any {
     it.contains("release") || it.contains("bundle") || it.contains("publish")
@@ -104,9 +105,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.lohithms.splitflow'
+    namespace 'com.lohithms.investflow'
     defaultConfig {
-        applicationId 'com.lohithms.splitflow'
+        applicationId 'com.lohithms.investflow'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 4
@@ -143,12 +144,12 @@ android {
                 signingConfig signingConfigs.debug
                 if (isReleaseTaskRequested && !allowDebugSigningForRelease) {
                     throw new RuntimeException(
-                        "Missing release signing config. Provide SPLITFLOW_UPLOAD_STORE_FILE, " +
-                        "SPLITFLOW_UPLOAD_STORE_PASSWORD, SPLITFLOW_UPLOAD_KEY_ALIAS, and " +
-                        "SPLITFLOW_UPLOAD_KEY_PASSWORD via env vars, gradle properties, or android/keystore.properties."
+                        "Missing release signing config. Provide INVESTFLOW_UPLOAD_STORE_FILE, " +
+                        "INVESTFLOW_UPLOAD_STORE_PASSWORD, INVESTFLOW_UPLOAD_KEY_ALIAS, and " +
+                        "INVESTFLOW_UPLOAD_KEY_PASSWORD via env vars, gradle properties, or android/keystore.properties."
                     )
                 }
-                logger.lifecycle("[SplitFlow] Release signing values not found. Using debug key only for local non-production builds.")
+                logger.lifecycle("[INVESTFLOW] Release signing values not found. Using debug key only for local non-production builds.")
             }
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()

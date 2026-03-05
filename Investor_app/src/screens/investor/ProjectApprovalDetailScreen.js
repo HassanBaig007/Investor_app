@@ -13,16 +13,28 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import { theme, formatCurrency } from '../../components/Theme';
-import { getRelativeTime, getDaysRemaining } from '../../utils/dateTimeUtils';
+import { getDaysRemaining } from '../../utils/dateTimeUtils';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 export default function ProjectApprovalDetailScreen({ navigation, route }) {
     const { user: currentUser } = useAuth();
-    const modificationId = route?.params?.modificationId;
-    const [modification, setModification] = useState(route?.params?.modification || null);
+    const routedModification = route?.params?.modification || null;
+    const modificationId = route?.params?.modificationId || routedModification?.id || routedModification?._id || null;
+    const [modification, setModification] = useState(routedModification);
     const [investors, setInvestors] = useState([]);
     const [isLoading, setIsLoading] = useState(!modification);
+
+    const formatApprovalDate = (value) => {
+        if (!value) return null;
+        const parsedDate = new Date(value);
+        if (Number.isNaN(parsedDate.getTime())) return String(value);
+        return parsedDate.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+        });
+    };
 
     useEffect(() => {
         const fetchData = async () => {
@@ -214,7 +226,7 @@ export default function ProjectApprovalDetailScreen({ navigation, route }) {
                                 </View>
                                 <Text style={styles.approvalTime}>
                                     {approval.votedAt || approval.date
-                                        ? getRelativeTime(approval.votedAt || approval.date)
+                                        ? formatApprovalDate(approval.votedAt || approval.date)
                                         : 'Awaiting vote'}
                                 </Text>
                             </View>

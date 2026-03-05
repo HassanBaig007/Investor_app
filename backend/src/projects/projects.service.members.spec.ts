@@ -362,6 +362,7 @@ describe('ProjectsService (member + metadata flows)', () => {
     const projectDoc = makeProjectDoc({
       createdBy: 'creator-1',
       investors: [{ user: 'u-9', role: 'active' }],
+      pendingInvitations: [{ userId: 'u-10', role: 'passive' }],
     });
     projectModel.findById.mockResolvedValue(projectDoc);
     userModel.find.mockReturnValue(
@@ -376,7 +377,7 @@ describe('ProjectsService (member + metadata flows)', () => {
     });
 
     expect(userModel.find).toHaveBeenCalledWith({
-      _id: { $nin: ['creator-1', 'u-9'] },
+      _id: { $nin: ['creator-1', 'u-9', 'u-10'] },
       role: { $ne: 'guest' },
     });
     expect(result).toHaveLength(1);

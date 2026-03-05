@@ -1,15 +1,24 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
+const requireEnv = (key) => {
+    const value = process.env[key];
+    if (!value) {
+        throw new Error(`Missing required environment variable: ${key}`);
+    }
+    return value;
+};
+
 async function seedAdmin() {
     try {
-        await mongoose.connect('mongodb://localhost:27017/invest_flow');
-        console.log('Connected to MongoDB');
+        const mongoUri = requireEnv('MONGODB_URI');
+        const email = requireEnv('SEED_ADMIN_EMAIL');
+        const password = requireEnv('SEED_ADMIN_PASSWORD');
+        const name = process.env.SEED_ADMIN_NAME || 'Super Admin';
+        const role = process.env.SEED_ADMIN_ROLE || 'super_admin';
 
-        const email = 'admin@splitflow.com';
-        const password = 'admin123';
-        const name = 'Super Admin';
-        const role = 'super_admin';
+        await mongoose.connect(mongoUri);
+        console.log('Connected to MongoDB');
 
         // Check if admin exists
         const existing = await mongoose.connection.db.collection('users').findOne({ email });
@@ -27,7 +36,6 @@ async function seedAdmin() {
             passwordHash,
             name,
             role,
-            kycVerified: true,
             createdAt: new Date(),
             updatedAt: new Date(),
             __v: 0
@@ -36,7 +44,6 @@ async function seedAdmin() {
         await mongoose.connection.db.collection('users').insertOne(adminUser);
         console.log('--- ADMIN USER SEEDED ---');
         console.log(`Email: ${email}`);
-        console.log(`Password: ${password}`);
         console.log(`Role: ${role}`);
         console.log('-------------------------');
 

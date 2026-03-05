@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -8,8 +8,10 @@ import {
 import { User, UserDocument } from '../users/schemas/user.schema';
 
 @Injectable()
-export class NotificationService {
+export class NotificationService implements OnModuleInit {
   private readonly logger = new Logger(NotificationService.name);
+  private readonly missingTokenLogAtByRecipient = new Map<string, number>();
+  private readonly missingTokenLogCooldownMs = 10 * 60 * 1000;
 
   constructor(
     @InjectModel(Notification.name)
@@ -18,11 +20,35 @@ export class NotificationService {
     private readonly userModel: Model<UserDocument>,
   ) {}
 
-  private isExpoPushToken(token: string) {
-    return (
-      /^ExponentPushToken\[[^\]]+\]$/.test(token) ||
-      /^ExpoPushToken\[[^\]]+\]$/.test(token)
-    );
+  private shouldLogMissingPushToken(recipientId: string): boolean {
+    const now = Date.now();
+    const lastLogAt = this.missingTokenLogAtByRecipient.get(recipientId) || 0;
+    const shouldLog = now - lastLogAt >= this.missingTokenLogCooldownMs;
+
+    if (shouldLog) {
+      if (this.missingTokenLogAtByRecipient.size > 5000) {
+        this.missingTokenLogAtByRecipient.clear();
+      }
+      this.missingTokenLogAtByRecipient.set(recipientId, now);
+    }
+
+    return shouldLog;
+  }
+
+  private getFcmServerKey(): string {
+    return String(process.env.FCM_SERVER_KEY || '').trim();
+  }
+
+  onModuleInit() {
+    if (!this.getFcmServerKey()) {
+      this.logger.warn(
+        'FCM_SERVER_KEY is not configured. Remote push delivery is disabled until a valid key is set.',
+      );
+    }
+  }
+
+  private normalizePushToken(token: unknown): string {
+    return typeof token === 'string' ? token.trim() : '';
   }
 
   async sendPush(
@@ -40,16 +66,38 @@ export class NotificationService {
     });
     await notification.save();
 
-    // 2. Remote push via Expo (best-effort)
+    // 2. Remote push (best-effort)
     const recipient = await this.userModel
       .findById(recipientId)
       .select({ settings: 1 })
       .lean()
       .exec();
 
-    const pushToken = recipient?.settings?.pushToken;
-    if (!pushToken || !this.isExpoPushToken(String(pushToken))) {
-      this.logger.debug(`No valid push token for recipient ${recipientId}`);
+    const pushEnabled = recipient?.settings?.notifications?.pushEnabled ?? true;
+    if (!pushEnabled) {
+      return {
+        notificationId: String(notification._id),
+        delivered: false,
+        reason: 'push_disabled',
+      };
+    }
+
+    const fcmServerKey = this.getFcmServerKey();
+    if (!fcmServerKey) {
+      return {
+        notificationId: String(notification._id),
+        delivered: false,
+        reason: 'push_provider_not_configured',
+      };
+    }
+
+    const pushToken = this.normalizePushToken(recipient?.settings?.pushToken);
+    if (!pushToken) {
+      if (this.shouldLogMissingPushToken(recipientId)) {
+        this.logger.debug(
+          `Skipping remote push for recipient ${recipientId}: no push token`,
+        );
+      }
       return {
         notificationId: String(notification._id),
         delivered: false,
@@ -58,49 +106,46 @@ export class NotificationService {
     }
 
     try {
-      const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      const response = await fetch('https://fcm.googleapis.com/fcm/send', {
         method: 'POST',
         headers: {
-          Accept: 'application/json',
-          'Accept-encoding': 'gzip, deflate',
+          Authorization: `key=${fcmServerKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          to: String(pushToken),
-          title,
-          body,
+          to: pushToken,
+          notification: { title, body },
           data,
-          sound: 'default',
         }),
       });
 
-      const expoResult = await response.json().catch(() => null);
+      const providerResult = await response.json().catch(() => null);
 
       if (!response.ok) {
         this.logger.error(
-          `Expo push send failed for recipient ${recipientId}: ${response.status} ${response.statusText}`,
+          `Push send failed for recipient ${recipientId}: ${response.status} ${response.statusText}`,
         );
         return {
           notificationId: String(notification._id),
           delivered: false,
-          reason: 'expo_request_failed',
-          expoResult,
+          reason: 'push_request_failed',
+          providerResult,
         };
       }
 
       return {
         notificationId: String(notification._id),
         delivered: true,
-        expoResult,
+        providerResult,
       };
     } catch (error) {
       this.logger.error(
-        `Expo push send threw for recipient ${recipientId}: ${(error as Error)?.message || 'unknown error'}`,
+        `Push send threw for recipient ${recipientId}: ${(error as Error)?.message || 'unknown error'}`,
       );
       return {
         notificationId: String(notification._id),
         delivered: false,
-        reason: 'expo_request_exception',
+        reason: 'push_request_exception',
       };
     }
   }

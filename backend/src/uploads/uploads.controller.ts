@@ -4,13 +4,53 @@ import {
   UseInterceptors,
   UploadedFile,
   UseGuards,
-  Req,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { diskStorage } from 'multer';
 import { extname } from 'node:path';
-import type { Request } from 'express';
+
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+  'text/csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.pdf',
+  '.csv',
+  '.xls',
+  '.xlsx',
+]);
+
+export const isAllowedUploadFile = (file: {
+  mimetype?: string;
+  originalname?: string;
+}): boolean => {
+  const mimeType = String(file?.mimetype || '').toLowerCase();
+  const extension = extname(String(file?.originalname || '')).toLowerCase();
+
+  return (
+    ALLOWED_UPLOAD_MIME_TYPES.has(mimeType) &&
+    ALLOWED_UPLOAD_EXTENSIONS.has(extension)
+  );
+};
+
+const getPublicUploadBaseUrl = (): string => {
+  const configuredBaseUrl = String(process.env.PUBLIC_BASE_URL || '').trim();
+  const fallbackBaseUrl = 'http://localhost:3000';
+  const baseUrl = configuredBaseUrl || fallbackBaseUrl;
+  return baseUrl.replace(/\/+$/, '');
+};
 
 @Controller('uploads')
 export class UploadsController {
@@ -21,6 +61,19 @@ export class UploadsController {
       limits: {
         fileSize: 10 * 1024 * 1024,
         files: 1,
+      },
+      fileFilter: (req, file, cb) => {
+        if (!isAllowedUploadFile(file)) {
+          cb(
+            new UnsupportedMediaTypeException(
+              'Unsupported file type. Allowed types: jpg, jpeg, png, webp, pdf, csv, xls, xlsx',
+            ),
+            false,
+          );
+          return;
+        }
+
+        cb(null, true);
       },
       storage: diskStorage({
         destination: './uploads',
@@ -34,15 +87,10 @@ export class UploadsController {
       }),
     }),
   )
-  uploadFile(@Req() req: Request, @UploadedFile() file: Express.Multer.File) {
-    const proto =
-      (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
-    const host =
-      (req.headers['x-forwarded-host'] as string) ||
-      req.get('host') ||
-      'localhost:3000';
+  uploadFile(@UploadedFile() file: Express.Multer.File) {
+    const publicBaseUrl = getPublicUploadBaseUrl();
     return {
-      url: `${proto}://${host}/uploads/${file.filename}`,
+      url: `${publicBaseUrl}/uploads/${file.filename}`,
       filename: file.filename,
       originalname: file.originalname,
     };

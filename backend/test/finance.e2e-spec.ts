@@ -17,7 +17,7 @@ describe('FinanceController (e2e)', () => {
   let spendingIdForRejection: string;
 
   const adminUser = {
-    email: 'finance-admin-e2e@splitflow.com',
+    email: 'finance-admin-e2e@investflow.example',
     username: 'finance_admin_user',
     password: 'Password123!',
     name: 'Finance Admin',
@@ -26,7 +26,7 @@ describe('FinanceController (e2e)', () => {
   };
 
   const investorUser = {
-    email: 'finance-investor-e2e@splitflow.com',
+    email: 'finance-investor-e2e@investflow.example',
     username: 'finance_investor_user',
     password: 'Password123!',
     name: 'Finance Investor',

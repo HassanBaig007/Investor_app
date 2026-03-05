@@ -884,6 +884,12 @@ export class FinanceService {
     }
   }
 
+  private ensureUserHasNotVoted(approvals: Map<string, any>, userId: string): void {
+    if (approvals.has(userId)) {
+      throw new ForbiddenException('You have already voted on this spending');
+    }
+  }
+
   private countApprovedVotes(approvals: Map<string, any>): number {
     let approvedCount = 0;
     for (const approval of approvals.values()) {
@@ -1315,6 +1321,7 @@ export class FinanceService {
     const requiredVotes = activeInvestors.length;
     this.ensureUserCanVote(user, activeInvestors, userId);
     this.ensureApprovalsMap(spending);
+    this.ensureUserHasNotVoted(spending.approvals, userId);
 
     const memberNameMap = this.getMemberNameMap(project);
     const voterName = memberNameMap.get(userId) || 'Unknown';
@@ -1449,7 +1456,10 @@ export class FinanceService {
     // Text search via $or with regex across DB-level fields
     const searchTerm = (opts?.search || '').trim();
     if (searchTerm) {
-      const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedTerm = searchTerm.replaceAll(
+        /[.*+?^${}()|[\]\\]/g,
+        String.raw`\$&`,
+      );
       const regex = { $regex: escapedTerm, $options: 'i' };
 
       query.$or = [
@@ -1980,7 +1990,7 @@ export class FinanceService {
 
     if (exportFormat === 'csv') {
       const metadataRows = [
-        ['SplitFlow Expense Report', ''],
+        ['INVESTFLOW Expense Report', ''],
         ['Generated At', generatedAt.toISOString()],
         ['Period', `${periodFrom} to ${periodTo}`],
         ['Project Filter', projectFilter],
@@ -2021,15 +2031,15 @@ export class FinanceService {
         format: 'csv',
         mimeType: 'text/csv;charset=utf-8',
         content: `\uFEFF${csvLines.join('\n')}`,
-        filename: `splitflow_expenses_${this.buildFilterFileSuffix(filters)}_${dateStamp}.csv`,
+        filename: `INVESTFLOW_expenses_${this.buildFilterFileSuffix(filters)}_${dateStamp}.csv`,
       };
     }
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'SplitFlow';
+    workbook.creator = 'INVESTFLOW';
     workbook.created = generatedAt;
     workbook.modified = generatedAt;
-    workbook.lastModifiedBy = 'SplitFlow Reporting Engine';
+    workbook.lastModifiedBy = 'INVESTFLOW Reporting Engine';
 
     const statusTotals: Record<string, number> = expenses.reduce(
       (acc: Record<string, number>, item: any) => {
@@ -2073,7 +2083,7 @@ export class FinanceService {
     ];
 
     summarySheet.mergeCells('A1:D1');
-    summarySheet.getCell('A1').value = 'SplitFlow Expense Report Summary';
+    summarySheet.getCell('A1').value = 'INVESTFLOW Expense Report Summary';
     summarySheet.getCell('A1').font = {
       bold: true,
       size: 18,
@@ -2184,7 +2194,7 @@ export class FinanceService {
     });
 
     worksheet.mergeCells('A1:M1');
-    worksheet.getCell('A1').value = 'SplitFlow Expense Report';
+    worksheet.getCell('A1').value = 'INVESTFLOW Expense Report';
     worksheet.getCell('A1').font = {
       bold: true,
       size: 18,
@@ -2307,7 +2317,7 @@ export class FinanceService {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       encoding: 'base64',
       content: Buffer.from(workbookBuffer as ArrayBuffer).toString('base64'),
-      filename: `splitflow_expenses_${this.buildFilterFileSuffix(filters)}_${dateStamp}.xlsx`,
+      filename: `INVESTFLOW_expenses_${this.buildFilterFileSuffix(filters)}_${dateStamp}.xlsx`,
     };
   }
 

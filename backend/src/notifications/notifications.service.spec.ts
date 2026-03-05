@@ -15,6 +15,8 @@ jest.mock('mongoose', () => {
 
 describe('NotificationService', () => {
   let service: NotificationService;
+  let loggerErrorSpy: jest.SpyInstance;
+  const originalFcmServerKey = process.env.FCM_SERVER_KEY;
 
   const mockNotificationModel = {
     find: jest.fn(),
@@ -37,6 +39,7 @@ describe('NotificationService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    delete process.env.FCM_SERVER_KEY;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -51,34 +54,42 @@ describe('NotificationService', () => {
     }).compile();
 
     service = module.get<NotificationService>(NotificationService);
+    loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
 
     // Mock global fetch
     globalThis.fetch = jest.fn() as any;
+  });
+
+  afterEach(() => {
+    loggerErrorSpy?.mockRestore();
+  });
+
+  afterAll(() => {
+    if (originalFcmServerKey === undefined) {
+      delete process.env.FCM_SERVER_KEY;
+      return;
+    }
+    process.env.FCM_SERVER_KEY = originalFcmServerKey;
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
   });
 
-  // ═══════════════════════════════════════════════════════════════════
-  // isExpoPushToken
-  // ═══════════════════════════════════════════════════════════════════
-  describe('isExpoPushToken (private method)', () => {
-    it('validates standard ExponentPushToken format', () => {
-      expect(service['isExpoPushToken']('ExponentPushToken[xxxx-yyyy]')).toBe(
-        true,
-      );
-    });
+  it('logs a warning on module init when FCM key is missing', () => {
+    const loggerWarnSpy = jest
+      .spyOn((service as any).logger, 'warn')
+      .mockImplementation(() => undefined);
 
-    it('validates newer ExpoPushToken format', () => {
-      expect(service['isExpoPushToken']('ExpoPushToken[xxxx-yyyy]')).toBe(true);
-    });
+    (service as any).onModuleInit();
 
-    it('rejects invalid formats', () => {
-      expect(service['isExpoPushToken']('ExponentPushToken[]')).toBe(false); // Empty brackets
-      expect(service['isExpoPushToken']('invalid-token')).toBe(false);
-      expect(service['isExpoPushToken']('')).toBe(false);
-    });
+    expect(loggerWarnSpy).toHaveBeenCalledWith(
+      'FCM_SERVER_KEY is not configured. Remote push delivery is disabled until a valid key is set.',
+    );
+
+    loggerWarnSpy.mockRestore();
   });
 
   // ═══════════════════════════════════════════════════════════════════
@@ -101,6 +112,7 @@ describe('NotificationService', () => {
     });
 
     it('returns early and creates DB record if user has no valid push token', async () => {
+      process.env.FCM_SERVER_KEY = 'test-server-key';
       mockUserModel.findById.mockReturnValue(
         mockQuery({ settings: { pushToken: null } }),
       );
@@ -112,9 +124,52 @@ describe('NotificationService', () => {
       expect(globalThis.fetch).not.toHaveBeenCalled();
     });
 
-    it('sends fetch request to Expo and returns success', async () => {
+    it('returns early when recipient has push notifications disabled', async () => {
       mockUserModel.findById.mockReturnValue(
-        mockQuery({ settings: { pushToken: 'ExpoPushToken[mock]' } }),
+        mockQuery({ settings: { notifications: { pushEnabled: false } } }),
+      );
+
+      const result = await service.sendPush('u1', 'Title', 'Body');
+
+      expect(result.delivered).toBe(false);
+      expect(result.reason).toBe('push_disabled');
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('returns early when push provider is not configured', async () => {
+      mockUserModel.findById.mockReturnValue(
+        mockQuery({ settings: { pushToken: 'fcm-token-123' } }),
+      );
+
+      const result = await service.sendPush('u1', 'Title', 'Body');
+
+      expect(result.delivered).toBe(false);
+      expect(result.reason).toBe('push_provider_not_configured');
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('does not log missing-token debug when push provider is not configured', async () => {
+      const loggerDebugSpy = jest
+        .spyOn((service as any).logger, 'debug')
+        .mockImplementation(() => undefined);
+
+      mockUserModel.findById.mockReturnValue(
+        mockQuery({ settings: { pushToken: null } }),
+      );
+
+      const result = await service.sendPush('u1', 'Title', 'Body');
+
+      expect(result.delivered).toBe(false);
+      expect(result.reason).toBe('push_provider_not_configured');
+      expect(loggerDebugSpy).not.toHaveBeenCalled();
+
+      loggerDebugSpy.mockRestore();
+    });
+
+    it('sends fetch request to push provider and returns success', async () => {
+      process.env.FCM_SERVER_KEY = 'test-server-key';
+      mockUserModel.findById.mockReturnValue(
+        mockQuery({ settings: { pushToken: 'fcm-token-123' } }),
       );
 
       (globalThis.fetch as jest.Mock).mockResolvedValue({
@@ -125,19 +180,20 @@ describe('NotificationService', () => {
       const result = await service.sendPush('u1', 'Title', 'Body');
 
       expect(result.delivered).toBe(true);
-      expect(result.expoResult).toEqual({ data: { status: 'ok' } });
+      expect(result.providerResult).toEqual({ data: { status: 'ok' } });
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        'https://exp.host/--/api/v2/push/send',
+        'https://fcm.googleapis.com/fcm/send',
         expect.objectContaining({
           method: 'POST',
-          body: expect.stringContaining('ExpoPushToken[mock]'),
+          body: expect.stringContaining('fcm-token-123'),
         }),
       );
     });
 
-    it('handles HTTP error responses from Expo API', async () => {
+    it('handles HTTP error responses from push provider', async () => {
+      process.env.FCM_SERVER_KEY = 'test-server-key';
       mockUserModel.findById.mockReturnValue(
-        mockQuery({ settings: { pushToken: 'ExpoPushToken[mock]' } }),
+        mockQuery({ settings: { pushToken: 'fcm-token-123' } }),
       );
 
       (globalThis.fetch as jest.Mock).mockResolvedValue({
@@ -150,12 +206,13 @@ describe('NotificationService', () => {
       const result = await service.sendPush('u1', 'Title', 'Body');
 
       expect(result.delivered).toBe(false);
-      expect(result.reason).toBe('expo_request_failed');
+      expect(result.reason).toBe('push_request_failed');
     });
 
     it('catches network exceptions during fetch', async () => {
+      process.env.FCM_SERVER_KEY = 'test-server-key';
       mockUserModel.findById.mockReturnValue(
-        mockQuery({ settings: { pushToken: 'ExpoPushToken[mock]' } }),
+        mockQuery({ settings: { pushToken: 'fcm-token-123' } }),
       );
 
       (globalThis.fetch as jest.Mock).mockRejectedValue(
@@ -165,7 +222,7 @@ describe('NotificationService', () => {
       const result = await service.sendPush('u1', 'Title', 'Body');
 
       expect(result.delivered).toBe(false);
-      expect(result.reason).toBe('expo_request_exception');
+      expect(result.reason).toBe('push_request_exception');
     });
   });
 

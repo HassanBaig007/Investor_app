@@ -154,7 +154,7 @@ export default function LoginScreen({ navigation, onLogin }) {
                                 </View>
                             </LinearGradient>
                         </View>
-                        <Text style={styles.appName}>SplitFlow</Text>
+                        <Text style={styles.appName}>INVESTFLOW</Text>
                         <Text style={styles.tagline}>Project expenses, simplified</Text>
                     </View>
 

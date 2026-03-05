@@ -11,6 +11,7 @@ import {
     Alert,
     Share,
     Modal,
+    KeyboardAvoidingView,
     Platform,
     Dimensions,
     Animated,
@@ -122,7 +123,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
         const checkWelcome = async () => {
             if (!currentUser?.id) return;
             try {
-                const key = `splitflow_welcome_shown_${currentUser?.id}`;
+                const key = `INVESTFLOW_welcome_shown_${currentUser?.id}`;
                 const hasSeenWelcome = await AsyncStorage.getItem(key);
                 if (hasSeenWelcome !== 'true') {
                     // First time user - show the modal
@@ -141,7 +142,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
     const dismissInfoModal = async () => {
         setShowInfoModal(false);
         try {
-            const key = `splitflow_welcome_shown_${currentUser?.id}`;
+            const key = `INVESTFLOW_welcome_shown_${currentUser?.id}`;
             await AsyncStorage.setItem(key, 'true');
         } catch (error) {
             console.log('Error saving welcome modal state:', error);
@@ -247,9 +248,18 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                 });
 
             const spendingApprovals = asArray(pendingSpendingApprovals?.approvals).filter(Boolean);
+            const normalizedSpendingApprovals = (spendingApprovals || []).map((approval) => ({
+                ...approval,
+                id: approval.id || approval._id,
+                type: 'spending',
+                title: approval.title || 'Pending Spending Approval',
+                projectName: approval.projectName || 'Project',
+                proposedAt: approval.proposedAt || approval.createdAt || approval.updatedAt,
+            }));
 
             const normalizedModificationApprovals = (pendingModificationApprovals || []).map((m) => ({
                 ...m,
+                id: m.id || m._id,
                 type: m.type || 'modification',
                 title: m.title || 'Pending Modification Approval',
                 projectName: m.projectName || 'Project',
@@ -258,7 +268,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
 
             setPendingApprovals([
                 ...normalizedModificationApprovals,
-                ...spendingApprovals,
+                ...normalizedSpendingApprovals,
             ]);
         } catch (err) {
             console.error('Failed to load dashboard data:', err);
@@ -407,8 +417,8 @@ export default function InvestorDashboard({ navigation, onLogout }) {
     const handleInviteFriends = async () => {
         try {
             await Share.share({
-                message: 'Join me on SplitFlow - the easiest way to manage project expenses with your team! Download now: https://splitflow.app',
-                title: 'Invite to SplitFlow',
+                message: 'Join me on INVESTFLOW - the easiest way to manage project expenses with your team! Download now: https://placeholder.investflow.example',
+                title: 'Invite to INVESTFLOW',
             });
         } catch (error) {
             console.error('Could not open share dialog:', error);
@@ -713,10 +723,19 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                         style={styles.approvalCardHighlighted}
                                         onPress={() => {
                                             if (approval.type === 'spending') {
-                                                navigation.navigate('ProjectDetail', { projectId: approval.projectId });
+                                                navigation.navigate('PendingApprovalDetail', {
+                                                    approvalType: 'spending',
+                                                    spendingId: approval.id || approval._id,
+                                                    projectId: approval.projectId,
+                                                    approval,
+                                                });
                                                 return;
                                             }
-                                            navigation.navigate('ProjectApprovalDetail', { modificationId: approval.id });
+                                            navigation.navigate('PendingApprovalDetail', {
+                                                approvalType: 'modification',
+                                                modificationId: approval.id || approval._id,
+                                                modification: approval,
+                                            });
                                         }}
                                     >
                                         <View style={styles.approvalIconHighlighted}>
@@ -961,10 +980,33 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                 <TouchableOpacity
                                     key={approval.id || approval._id || `${approval.projectName || 'approval'}-${index}`}
                                     style={styles.approvalCard}
-                                    onPress={() => navigation.navigate('ProjectApprovalDetail', { modificationId: approval.id })}
+                                    onPress={() => {
+                                        if (approval.type === 'spending') {
+                                            navigation.navigate('PendingApprovalDetail', {
+                                                approvalType: 'spending',
+                                                spendingId: approval.id || approval._id,
+                                                projectId: approval.projectId,
+                                                approval,
+                                            });
+                                            return;
+                                        }
+                                        navigation.navigate('PendingApprovalDetail', {
+                                            approvalType: 'modification',
+                                            modificationId: approval.id || approval._id,
+                                            modification: approval,
+                                        });
+                                    }}
                                 >
                                     <View style={styles.approvalIcon}>
-                                        <MaterialCommunityIcons name="alert-circle" size={20} color="#F59E0B" />
+                                        <MaterialCommunityIcons
+                                            name={
+                                                approval.type === 'spending'
+                                                    ? 'cash-plus'
+                                                    : 'alert-circle'
+                                            }
+                                            size={20}
+                                            color="#F59E0B"
+                                        />
                                     </View>
                                     <View style={styles.approvalContent}>
                                         <Text style={styles.approvalTitle} numberOfLines={1}>{approval.title}</Text>
@@ -1042,7 +1084,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                 <MaterialCommunityIcons name="account-multiple-plus" size={64} color="white" />
                                 <Text style={styles.inviteTitle}>Invite Friends</Text>
                                 <Text style={styles.inviteSubtitle}>
-                                    Share SplitFlow with your team and manage project expenses together
+                                    Share INVESTFLOW with your team and manage project expenses together
                                 </Text>
                                 <TouchableOpacity
                                     style={styles.inviteButton}
@@ -1268,7 +1310,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                         >
                             <MaterialCommunityIcons name="star-four-points" size={40} color="white" />
                         </LinearGradient>
-                        <Text style={styles.infoTitle}>Welcome to SplitFlow! 🎉</Text>
+                        <Text style={styles.infoTitle}>Welcome to INVESTFLOW! 🎉</Text>
                         <Text style={styles.infoSubtitle}>Your smart investment & expense management companion</Text>
 
                         <View style={styles.infoFeatures}>
@@ -1589,60 +1631,80 @@ export default function InvestorDashboard({ navigation, onLogout }) {
             </Modal>
 
             <Modal visible={Boolean(editingPrice)} transparent animationType="fade">
-                <View style={styles.editorOverlay}>
+                <KeyboardAvoidingView
+                    style={styles.editorOverlay}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+                >
                     <View style={styles.editorCard}>
-                        <Text style={styles.editorTitle}>Edit Market Price</Text>
-                        <TextInput style={styles.editorInput} value={editingPriceForm.name} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, name: text }))} placeholder="Name" />
-                        <TextInput style={styles.editorInput} value={editingPriceForm.price} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, price: text }))} placeholder="Price" />
-                        <TextInput style={styles.editorInput} value={editingPriceForm.trend} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, trend: text }))} placeholder="Trend (e.g. +2.4%)" />
-                        <TextInput style={styles.editorInput} value={editingPriceForm.icon} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, icon: text }))} placeholder="Icon name" />
-                        <TextInput style={styles.editorInput} value={editingPriceForm.color} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, color: text }))} placeholder="Color hex (e.g. #5B5CFF)" />
-                        <TouchableOpacity
-                            style={styles.positiveToggleBtn}
-                            onPress={() => setEditingPriceForm((prev) => ({ ...prev, positive: !prev.positive }))}
+                        <ScrollView
+                            keyboardShouldPersistTaps="handled"
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.editorScrollContent}
                         >
-                            <Text style={styles.positiveToggleLabel}>Trend Direction</Text>
-                            <Text style={[styles.positiveToggleValue, { color: editingPriceForm.positive ? theme.colors.success : theme.colors.danger }]}>
-                                {editingPriceForm.positive ? 'Positive' : 'Negative'}
-                            </Text>
-                        </TouchableOpacity>
-                        <View style={styles.editorActions}>
-                            <TouchableOpacity style={styles.editorCancelBtn} onPress={closeEditPriceModal} disabled={savingPrice}>
-                                <Text style={styles.editorCancelText}>Cancel</Text>
+                            <Text style={styles.editorTitle}>Edit Market Price</Text>
+                            <TextInput style={styles.editorInput} value={editingPriceForm.name} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, name: text }))} placeholder="Name" />
+                            <TextInput style={styles.editorInput} value={editingPriceForm.price} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, price: text }))} placeholder="Price" />
+                            <TextInput style={styles.editorInput} value={editingPriceForm.trend} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, trend: text }))} placeholder="Trend (e.g. +2.4%)" />
+                            <TextInput style={styles.editorInput} value={editingPriceForm.icon} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, icon: text }))} placeholder="Icon name" />
+                            <TextInput style={styles.editorInput} value={editingPriceForm.color} onChangeText={(text) => setEditingPriceForm((prev) => ({ ...prev, color: text }))} placeholder="Color hex (e.g. #5B5CFF)" />
+                            <TouchableOpacity
+                                style={styles.positiveToggleBtn}
+                                onPress={() => setEditingPriceForm((prev) => ({ ...prev, positive: !prev.positive }))}
+                            >
+                                <Text style={styles.positiveToggleLabel}>Trend Direction</Text>
+                                <Text style={[styles.positiveToggleValue, { color: editingPriceForm.positive ? theme.colors.success : theme.colors.danger }]}> 
+                                    {editingPriceForm.positive ? 'Positive' : 'Negative'}
+                                </Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.editorSaveBtn} onPress={saveMarketPriceEdit} disabled={savingPrice}>
-                                <Text style={styles.editorSaveText}>{savingPrice ? 'Saving...' : 'Save'}</Text>
-                            </TouchableOpacity>
-                        </View>
+                            <View style={styles.editorActions}>
+                                <TouchableOpacity style={styles.editorCancelBtn} onPress={closeEditPriceModal} disabled={savingPrice}>
+                                    <Text style={styles.editorCancelText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.editorSaveBtn} onPress={saveMarketPriceEdit} disabled={savingPrice}>
+                                    <Text style={styles.editorSaveText}>{savingPrice ? 'Saving...' : 'Save'}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </ScrollView>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
 
             <Modal visible={Boolean(editingNews)} transparent animationType="fade">
-                <View style={styles.editorOverlay}>
+                <KeyboardAvoidingView
+                    style={styles.editorOverlay}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+                >
                     <View style={styles.editorCard}>
-                        <Text style={styles.editorTitle}>Edit News Item</Text>
-                        <TextInput style={styles.editorInput} value={editingNewsForm.title} onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, title: text }))} placeholder="Title" />
-                        <TextInput style={styles.editorInput} value={editingNewsForm.category} onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, category: text }))} placeholder="Category" />
-                        <TextInput style={styles.editorInput} value={editingNewsForm.time} onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, time: text }))} placeholder="Time (e.g. 2 hours ago)" />
-                        <TextInput style={styles.editorInput} value={editingNewsForm.trend} onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, trend: text }))} placeholder="Trend (e.g. +15% / New)" />
-                        <TextInput
-                            style={[styles.editorInput, styles.editorInputMultiline]}
-                            value={editingNewsForm.description}
-                            onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, description: text }))}
-                            placeholder="Description"
-                            multiline
-                        />
-                        <View style={styles.editorActions}>
-                            <TouchableOpacity style={styles.editorCancelBtn} onPress={closeEditNewsModal} disabled={savingNews}>
-                                <Text style={styles.editorCancelText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.editorSaveBtn} onPress={saveNewsEdit} disabled={savingNews}>
-                                <Text style={styles.editorSaveText}>{savingNews ? 'Saving...' : 'Save'}</Text>
-                            </TouchableOpacity>
-                        </View>
+                        <ScrollView
+                            keyboardShouldPersistTaps="handled"
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.editorScrollContent}
+                        >
+                            <Text style={styles.editorTitle}>Edit News Item</Text>
+                            <TextInput style={styles.editorInput} value={editingNewsForm.title} onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, title: text }))} placeholder="Title" />
+                            <TextInput style={styles.editorInput} value={editingNewsForm.category} onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, category: text }))} placeholder="Category" />
+                            <TextInput style={styles.editorInput} value={editingNewsForm.time} onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, time: text }))} placeholder="Time (e.g. 2 hours ago)" />
+                            <TextInput style={styles.editorInput} value={editingNewsForm.trend} onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, trend: text }))} placeholder="Trend (e.g. +15% / New)" />
+                            <TextInput
+                                style={[styles.editorInput, styles.editorInputMultiline]}
+                                value={editingNewsForm.description}
+                                onChangeText={(text) => setEditingNewsForm((prev) => ({ ...prev, description: text }))}
+                                placeholder="Description"
+                                multiline
+                            />
+                            <View style={styles.editorActions}>
+                                <TouchableOpacity style={styles.editorCancelBtn} onPress={closeEditNewsModal} disabled={savingNews}>
+                                    <Text style={styles.editorCancelText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.editorSaveBtn} onPress={saveNewsEdit} disabled={savingNews}>
+                                    <Text style={styles.editorSaveText}>{savingNews ? 'Saving...' : 'Save'}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </ScrollView>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </SafeAreaView>
 
@@ -3053,6 +3115,10 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.surface,
         borderRadius: 16,
         padding: 16,
+        maxHeight: '88%',
+    },
+    editorScrollContent: {
+        paddingBottom: 6,
     },
     editorTitle: {
         fontSize: 16,

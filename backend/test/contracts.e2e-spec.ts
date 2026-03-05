@@ -17,7 +17,7 @@ describe('API Contracts (e2e)', () => {
   let searchResponse: Response;
 
   const contractUser = {
-    email: 'contracts-e2e-user@splitflow.com',
+    email: 'contracts-e2e-user@investflow.example',
     username: 'contracts_e2e_user',
     password: 'Password123!',
     name: 'Contract Tester User',

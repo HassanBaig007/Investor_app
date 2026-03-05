@@ -14,7 +14,7 @@ describe('Security and Access Control (e2e)', () => {
   let projectId: string;
 
   const creatorUser = {
-    email: 'security-creator-e2e@splitflow.com',
+    email: 'security-creator-e2e@investflow.example',
     username: 'security_creator_e2e',
     password: 'Password123!',
     name: 'Security Creator',
@@ -23,7 +23,7 @@ describe('Security and Access Control (e2e)', () => {
   };
 
   const outsiderUser = {
-    email: 'security-outsider-e2e@splitflow.com',
+    email: 'security-outsider-e2e@investflow.example',
     username: 'security_outsider_e2e',
     password: 'Password123!',
     name: 'Security Outsider',
@@ -155,7 +155,7 @@ describe('Security and Access Control (e2e)', () => {
     const response = await request(app.getHttpServer())
       .post('/api/auth/register')
       .send({
-        email: 'security-role-escalation-e2e@splitflow.com',
+        email: 'security-role-escalation-e2e@investflow.example',
         username: 'security_role_escalation_e2e',
         password: 'Password123!',
         name: 'Escalation Attempt',
@@ -168,6 +168,6 @@ describe('Security and Access Control (e2e)', () => {
 
     await connection.db
       ?.collection('users')
-      .deleteMany({ email: 'security-role-escalation-e2e@splitflow.com' });
+      .deleteMany({ email: 'security-role-escalation-e2e@investflow.example' });
   });
 });

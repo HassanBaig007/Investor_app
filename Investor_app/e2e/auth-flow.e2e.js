@@ -4,7 +4,7 @@ describe('Native Auth Flow', () => {
   });
 
   it('shows the login shell on app launch', async () => {
-    await expect(element(by.text('SplitFlow'))).toBeVisible();
+    await expect(element(by.text('INVESTFLOW'))).toBeVisible();
     await expect(element(by.text('Sign In'))).toBeVisible();
   });
 
@@ -12,7 +12,7 @@ describe('Native Auth Flow', () => {
     await element(by.text('Sign Up')).tap();
     await expect(element(by.text('Create Account'))).toBeVisible();
     await device.pressBack();
-    await expect(element(by.text('SplitFlow'))).toBeVisible();
+    await expect(element(by.text('INVESTFLOW'))).toBeVisible();
   });
 
   it('supports toggling between user/admin modes on login screen', async () => {

@@ -11,6 +11,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     Keyboard,
+    findNodeHandle,
     TouchableOpacity,
     ActivityIndicator,
     Alert,
@@ -203,6 +204,7 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
 
     // 4. Local UI State & Refs
     const scrollViewRef = useRef(null);
+    const descriptionInputRef = useRef(null);
     const viewMode = route?.params?.viewMode || null;
 
 
@@ -272,6 +274,27 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
     const getMemberUser = (member) => {
         if (!member?.id) return member;
         return memberMap[String(member.id)] || member;
+    };
+
+    const scrollInputAboveKeyboard = (inputRef, extraOffset = 160) => {
+        const scrollView = scrollViewRef.current;
+        const inputHandle = findNodeHandle(inputRef?.current);
+
+        if (
+            !scrollView ||
+            !inputHandle ||
+            typeof scrollView.scrollResponderScrollNativeHandleToKeyboard !== 'function'
+        ) {
+            return;
+        }
+
+        setTimeout(() => {
+            scrollView.scrollResponderScrollNativeHandleToKeyboard(
+                inputHandle,
+                extraOffset,
+                true,
+            );
+        }, Platform.OS === 'android' ? 140 : 60);
     };
 
     const getSpendingInitiatorId = (spending) => {
@@ -570,13 +593,16 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
             </View>
 
             <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
                 style={{ flex: 1 }}
             >
                 <ScrollView
                     ref={scrollViewRef}
                     showsVerticalScrollIndicator={false}
                     style={styles.content}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
                 >
                     {/* =================== PENDING APPROVALS ALERT =================== */}
                     {pendingSpendings.length > 0 && (
@@ -816,6 +842,7 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
                             <View style={styles.descSection}>
                                 <Text style={styles.fieldLabel}>📝 Description</Text>
                                 <TextInput
+                                    ref={descriptionInputRef}
                                     style={styles.descriptionInput}
                                     value={spendingDescription}
                                     onChangeText={setSpendingDescription}
@@ -823,6 +850,7 @@ export default function ProjectDetailScreen({ navigation, route }) { // NOSONAR
                                     placeholderTextColor={theme.colors.textTertiary}
                                     multiline
                                     numberOfLines={3}
+                                    onFocus={() => scrollInputAboveKeyboard(descriptionInputRef, 180)}
                                     returnKeyType="done"
                                     blurOnSubmit={true}
                                     onSubmitEditing={Keyboard.dismiss}

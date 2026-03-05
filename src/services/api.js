@@ -379,11 +379,6 @@ export const api = {
         return response.data; // Backend returns the updated user directly
     },
 
-    updateKyc: async (kycData) => {
-        const response = await instance.put('/users/kyc', kycData);
-        return response.data;
-    },
-
     // ============================================
     // FINANCE APIs
     // ============================================

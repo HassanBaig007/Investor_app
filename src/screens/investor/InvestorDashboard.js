@@ -122,7 +122,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
         const checkWelcome = async () => {
             if (!currentUser?.id) return;
             try {
-                const key = `splitflow_welcome_shown_${currentUser?.id}`;
+                const key = `INVESTFLOW_welcome_shown_${currentUser?.id}`;
                 const hasSeenWelcome = await AsyncStorage.getItem(key);
                 if (hasSeenWelcome !== 'true') {
                     // First time user - show the modal
@@ -141,7 +141,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
     const dismissInfoModal = async () => {
         setShowInfoModal(false);
         try {
-            const key = `splitflow_welcome_shown_${currentUser?.id}`;
+            const key = `INVESTFLOW_welcome_shown_${currentUser?.id}`;
             await AsyncStorage.setItem(key, 'true');
         } catch (error) {
             console.log('Error saving welcome modal state:', error);
@@ -407,8 +407,8 @@ export default function InvestorDashboard({ navigation, onLogout }) {
     const handleInviteFriends = async () => {
         try {
             await Share.share({
-                message: 'Join me on SplitFlow - the easiest way to manage project expenses with your team! Download now: https://splitflow.app',
-                title: 'Invite to SplitFlow',
+                message: 'Join me on INVESTFLOW - the easiest way to manage project expenses with your team! Download now: https://placeholder.investflow.example',
+                title: 'Invite to INVESTFLOW',
             });
         } catch (error) {
             console.error('Could not open share dialog:', error);
@@ -961,10 +961,28 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                 <TouchableOpacity
                                     key={approval.id || approval._id || `${approval.projectName || 'approval'}-${index}`}
                                     style={styles.approvalCard}
-                                    onPress={() => navigation.navigate('ProjectApprovalDetail', { modificationId: approval.id })}
+                                    onPress={() => {
+                                        if (approval.type === 'spending') {
+                                            navigation.navigate('ProjectDetail', {
+                                                projectId: approval.projectId,
+                                            });
+                                            return;
+                                        }
+                                        navigation.navigate('ProjectApprovalDetail', {
+                                            modificationId: approval.id,
+                                        });
+                                    }}
                                 >
                                     <View style={styles.approvalIcon}>
-                                        <MaterialCommunityIcons name="alert-circle" size={20} color="#F59E0B" />
+                                        <MaterialCommunityIcons
+                                            name={
+                                                approval.type === 'spending'
+                                                    ? 'cash-plus'
+                                                    : 'alert-circle'
+                                            }
+                                            size={20}
+                                            color="#F59E0B"
+                                        />
                                     </View>
                                     <View style={styles.approvalContent}>
                                         <Text style={styles.approvalTitle} numberOfLines={1}>{approval.title}</Text>
@@ -1042,7 +1060,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                                 <MaterialCommunityIcons name="account-multiple-plus" size={64} color="white" />
                                 <Text style={styles.inviteTitle}>Invite Friends</Text>
                                 <Text style={styles.inviteSubtitle}>
-                                    Share SplitFlow with your team and manage project expenses together
+                                    Share INVESTFLOW with your team and manage project expenses together
                                 </Text>
                                 <TouchableOpacity
                                     style={styles.inviteButton}
@@ -1268,7 +1286,7 @@ export default function InvestorDashboard({ navigation, onLogout }) {
                         >
                             <MaterialCommunityIcons name="star-four-points" size={40} color="white" />
                         </LinearGradient>
-                        <Text style={styles.infoTitle}>Welcome to SplitFlow! 🎉</Text>
+                        <Text style={styles.infoTitle}>Welcome to INVESTFLOW! 🎉</Text>
                         <Text style={styles.infoSubtitle}>Your smart investment & expense management companion</Text>
 
                         <View style={styles.infoFeatures}>

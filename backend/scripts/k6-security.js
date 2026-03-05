@@ -3,7 +3,7 @@ import { check, sleep } from 'k6';
 import { Counter } from 'k6/metrics';
 
 const baseUrl = __ENV.K6_BASE_URL || 'http://127.0.0.1:3000';
-const loginIdentifier = __ENV.K6_LOGIN_IDENTIFIER || 'non-existent@splitflow.com';
+const loginIdentifier = __ENV.K6_LOGIN_IDENTIFIER || 'non-existent@investflow.example';
 const loginPassword = __ENV.K6_LOGIN_PASSWORD || 'WrongPassword123!';
 
 const status429Counter = new Counter('security_status_429_total');

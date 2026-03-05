@@ -182,18 +182,6 @@ describe('UsersService', () => {
   });
 
   describe('Utility methods', () => {
-    it('updateKyc should set verified flag', async () => {
-      mockUserModel.findByIdAndUpdate.mockReturnValue(
-        mockQuery({ kycVerified: true }),
-      );
-      await service.updateKyc('u1', { id: 'card' });
-      expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        'u1',
-        { kycData: { id: 'card' }, kycVerified: true },
-        { returnDocument: 'after' },
-      );
-    });
-
     it('getAppConfig should return constants', () => {
       const config = service.getAppConfig();
       expect(config.passwordPolicy.minLength).toBe(10);
@@ -202,11 +190,11 @@ describe('UsersService', () => {
 
     it('registerPushToken should update settings', async () => {
       mockUserModel.findByIdAndUpdate.mockReturnValue(mockQuery({}));
-      await service.registerPushToken('u1', 'token-123');
+      await service.registerPushToken('u1', 'fcm-token-123');
       expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledWith(
         'u1',
         expect.objectContaining({
-          'settings.pushToken': 'token-123',
+          'settings.pushToken': 'fcm-token-123',
         }),
       );
     });

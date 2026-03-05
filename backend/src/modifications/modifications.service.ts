@@ -80,9 +80,10 @@ export class ModificationsService {
   }
 
   async create(createDto: any, user: any) {
-    const project = await this.projectsService.findOne(
-      createDto.project || createDto.projectId,
-    );
+    const projectReference = createDto?.project || createDto?.projectId;
+    if (!projectReference) throw new NotFoundException('Project not found');
+
+    const project = await this.projectsService.findOne(projectReference, user);
     if (!project) throw new NotFoundException('Project not found');
 
     const createdMod = new this.modificationModel({
@@ -166,6 +167,11 @@ export class ModificationsService {
       throw new ForbiddenException('Only active investors can vote');
 
     if (!mod.votes) mod.votes = new Map();
+    if (mod.votes.has(userId)) {
+      throw new ForbiddenException(
+        'You have already voted on this modification request',
+      );
+    }
 
     if (vote === 'rejected') {
       mod.status = 'rejected';
@@ -195,9 +201,17 @@ export class ModificationsService {
       user: userId,
     } as any);
 
+    const activeInvestorIds = new Set(
+      activeInvestors.map((inv) => this.getId(inv.user)),
+    );
     let approvedCount = 0;
-    for (const v of mod.votes.values()) {
-      if (v.status === 'approved') approvedCount++;
+    for (const [voteUserId, voteRecord] of mod.votes.entries()) {
+      if (
+        activeInvestorIds.has(voteUserId) &&
+        voteRecord?.status === 'approved'
+      ) {
+        approvedCount++;
+      }
     }
 
     if (approvedCount >= requiredVotes) {

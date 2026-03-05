@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { UsersService } from './users.service';
 import { AuthService } from '../auth/auth.service';
+import { RegisterPushTokenDto } from './dto/register-push-token.dto';
 
 const Roles = (...roles: string[]) => SetMetadata('roles', roles);
 
@@ -58,25 +59,83 @@ export class UsersController {
   }
 
   private mapSettingsFromClient(payload: any) {
-    const source = payload || {};
-    const notifications = source.notifications || {};
-    const isDark = source.theme ? source.theme === 'dark' : !!source.darkMode;
+    const source =
+      payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>)
+        : {};
+    const mapped: Record<string, unknown> = {};
 
-    return {
-      theme: isDark ? 'dark' : 'light',
-      darkMode: isDark,
-      biometricEnabled: source.biometricEnabled ?? source.biometric ?? false,
-      language: source.language || 'en',
-      currency: source.currency || 'INR',
-      notifications: {
-        pushEnabled: notifications.pushEnabled ?? notifications.push ?? true,
-        emailEnabled: notifications.emailEnabled ?? notifications.email ?? true,
-        approvalReminders:
-          notifications.approvalReminders ?? notifications.approvals ?? true,
-        reportAlerts:
-          notifications.reportAlerts ?? notifications.spendingAlerts ?? true,
-      },
-    };
+    const hasTheme =
+      Object.prototype.hasOwnProperty.call(source, 'theme') ||
+      Object.prototype.hasOwnProperty.call(source, 'darkMode');
+    if (hasTheme) {
+      const requestedTheme =
+        source.theme === 'dark' || source.darkMode === true ? 'dark' : 'light';
+      mapped.theme = requestedTheme;
+      mapped.darkMode = requestedTheme === 'dark';
+    }
+
+    if (Object.prototype.hasOwnProperty.call(source, 'biometricEnabled')) {
+      mapped.biometricEnabled = Boolean(source.biometricEnabled);
+    } else if (Object.prototype.hasOwnProperty.call(source, 'biometric')) {
+      mapped.biometricEnabled = Boolean(source.biometric);
+    }
+
+    if (typeof source.language === 'string' && source.language.trim()) {
+      mapped.language = source.language.trim();
+    }
+
+    if (typeof source.currency === 'string' && source.currency.trim()) {
+      mapped.currency = source.currency.trim().toUpperCase();
+    }
+
+    const hasNotifications =
+      Object.prototype.hasOwnProperty.call(source, 'notifications') &&
+      source.notifications &&
+      typeof source.notifications === 'object';
+
+    if (hasNotifications) {
+      const notifications = source.notifications as Record<string, unknown>;
+      const mappedNotifications: Record<string, boolean> = {};
+
+      if (Object.prototype.hasOwnProperty.call(notifications, 'pushEnabled')) {
+        mappedNotifications.pushEnabled = Boolean(notifications.pushEnabled);
+      } else if (Object.prototype.hasOwnProperty.call(notifications, 'push')) {
+        mappedNotifications.pushEnabled = Boolean(notifications.push);
+      }
+
+      if (Object.prototype.hasOwnProperty.call(notifications, 'emailEnabled')) {
+        mappedNotifications.emailEnabled = Boolean(notifications.emailEnabled);
+      } else if (Object.prototype.hasOwnProperty.call(notifications, 'email')) {
+        mappedNotifications.emailEnabled = Boolean(notifications.email);
+      }
+
+      if (
+        Object.prototype.hasOwnProperty.call(notifications, 'approvalReminders')
+      ) {
+        mappedNotifications.approvalReminders = Boolean(
+          notifications.approvalReminders,
+        );
+      } else if (
+        Object.prototype.hasOwnProperty.call(notifications, 'approvals')
+      ) {
+        mappedNotifications.approvalReminders = Boolean(notifications.approvals);
+      }
+
+      if (Object.prototype.hasOwnProperty.call(notifications, 'reportAlerts')) {
+        mappedNotifications.reportAlerts = Boolean(notifications.reportAlerts);
+      } else if (
+        Object.prototype.hasOwnProperty.call(notifications, 'spendingAlerts')
+      ) {
+        mappedNotifications.reportAlerts = Boolean(notifications.spendingAlerts);
+      }
+
+      if (Object.keys(mappedNotifications).length > 0) {
+        mapped.notifications = mappedNotifications;
+      }
+    }
+
+    return mapped;
   }
 
   @Get()
@@ -126,19 +185,13 @@ export class UsersController {
     return this.sanitizeUser(user);
   }
 
-  @Put('kyc')
-  async updateKyc(@Request() req, @Body() kycData: any) {
-    const user = await this.usersService.updateKyc(req.user.userId, kycData);
-    return this.sanitizeUser(user);
-  }
-
   @Put('settings')
   async updateSettings(@Request() req, @Body() settingsDto: any) {
     const mappedSettings = this.mapSettingsFromClient(settingsDto);
-    const user = await this.usersService.updateSettings(
-      req.user.userId,
-      mappedSettings,
-    );
+    const user =
+      Object.keys(mappedSettings).length > 0
+        ? await this.usersService.updateSettings(req.user.userId, mappedSettings)
+        : await this.usersService.findById(req.user.userId);
     return { settings: this.normalizeSettingsForClient(user?.settings || {}) };
   }
 
@@ -194,10 +247,10 @@ export class UsersController {
 
   /**
    * POST /users/push-token
-   * Register Expo push notification token for server-driven notifications.
+    * Register device push notification token for server-driven notifications.
    */
   @Post('push-token')
-  async registerPushToken(@Request() req, @Body() body: any) {
+  async registerPushToken(@Request() req, @Body() body: RegisterPushTokenDto) {
     const { pushToken } = body;
     return this.usersService.registerPushToken(req.user.userId, pushToken);
   }

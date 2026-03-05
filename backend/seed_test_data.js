@@ -22,7 +22,6 @@ async function seed() {
             passwordHash,
             name: 'Rahul Sharma',
             role: 'investor',
-            kycVerified: true,
             createdAt: new Date(),
             updatedAt: new Date()
         });
@@ -32,7 +31,6 @@ async function seed() {
             passwordHash,
             name: 'Priya',
             role: 'investor',
-            kycVerified: true,
             createdAt: new Date(),
             updatedAt: new Date()
         });

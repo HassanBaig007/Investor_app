@@ -21,7 +21,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { theme } from '../components/Theme';
 import { validateLoginForm } from '../utils/validationUtils';
 import { api } from '../services/api';
-import { useAuth } from '../context/AuthContext';
+
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const APP_LOGO = require('../../assets/Investor_app_logo.jpeg');
@@ -30,7 +30,7 @@ const APP_LOGO = require('../../assets/Investor_app_logo.jpeg');
  * LoginScreen with Authentication
  */
 export default function LoginScreen({ navigation, onLogin }) {
-    const { biometricAvailable, biometricEnabled, loginWithBiometric } = useAuth();
+    
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -51,21 +51,7 @@ export default function LoginScreen({ navigation, onLogin }) {
         setErrors({});
     };
 
-    const handleBiometricLogin = async () => {
-        setIsLoading(true);
-        try {
-            const result = await loginWithBiometric();
-            if (result.success) {
-                onLogin?.(result.user);
-            } else if (result.error && result.error !== 'Biometric verification cancelled.') {
-                Alert.alert('Biometric Login', result.error);
-            }
-        } catch {
-            Alert.alert('Error', 'Biometric login failed. Please use your password.');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    
 
     const handleLogin = () => {
         if (Object.keys(errors).length > 0) {
@@ -154,7 +140,7 @@ export default function LoginScreen({ navigation, onLogin }) {
                                 </View>
                             </LinearGradient>
                         </View>
-                        <Text style={styles.appName}>SplitFlow</Text>
+                        <Text style={styles.appName}>INVESTFLOW</Text>
                         <Text style={styles.tagline}>Project expenses, simplified</Text>
                     </View>
 
@@ -194,7 +180,6 @@ export default function LoginScreen({ navigation, onLogin }) {
                                 style={styles.input}
                                 placeholder="Email address, phone number, or user name"
                                 placeholderTextColor={theme.colors.textTertiary}
-                                value={email}
                                 onChangeText={setEmail}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
@@ -258,30 +243,7 @@ export default function LoginScreen({ navigation, onLogin }) {
 
                     </View>
 
-                    {/* Biometric Login Button */}
-                    {!isSuperAdmin && biometricAvailable && biometricEnabled && (
-                        <View style={styles.biometricSection}>
-                            <View style={styles.biometricDivider}>
-                                <View style={styles.biometricDividerLine} />
-                                <Text style={styles.biometricDividerText}>or</Text>
-                                <View style={styles.biometricDividerLine} />
-                            </View>
-                            <TouchableOpacity
-                                style={styles.biometricButton}
-                                onPress={handleBiometricLogin}
-                                disabled={isLoading}
-                                activeOpacity={0.7}
-                            >
-                                <LinearGradient
-                                    colors={['#10B981', '#059669']}
-                                    style={styles.biometricGradient}
-                                >
-                                    <MaterialCommunityIcons name="fingerprint" size={28} color="white" />
-                                    <Text style={styles.biometricText}>Login with Fingerprint</Text>
-                                </LinearGradient>
-                            </TouchableOpacity>
-                        </View>
-                    )}
+                    
 
                     {/* Footer / Sign Up Link */}
                     {!isSuperAdmin && (
@@ -540,44 +502,5 @@ const styles = StyleSheet.create({
         backgroundColor: theme.colors.border,
         marginHorizontal: 16,
     },
-    // Biometric
-    biometricSection: {
-        marginTop: 16,
-        alignItems: 'center',
-    },
-    biometricDivider: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-        width: '100%',
-    },
-    biometricDividerLine: {
-        flex: 1,
-        height: 1,
-        backgroundColor: theme.colors.border,
-    },
-    biometricDividerText: {
-        marginHorizontal: 12,
-        fontSize: 13,
-        color: theme.colors.textTertiary,
-        fontWeight: '500',
-    },
-    biometricButton: {
-        borderRadius: 14,
-        overflow: 'hidden',
-        width: '100%',
-        ...theme.shadows.soft,
-    },
-    biometricGradient: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 14,
-        gap: 10,
-    },
-    biometricText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: 'white',
-    },
+    
 });

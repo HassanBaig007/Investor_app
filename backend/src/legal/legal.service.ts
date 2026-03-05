@@ -9,7 +9,7 @@ export class LegalService {
       version: '1.0.0',
       lastUpdated: '2026-02-16',
       effectiveDate: '2026-02-16',
-      contentUrl: 'https://splitflow.app/privacy-policy',
+      contentUrl: 'https://placeholder.investflow.example/privacy-policy',
     };
   }
 
@@ -20,7 +20,7 @@ export class LegalService {
       version: '1.0.0',
       lastUpdated: '2026-02-16',
       effectiveDate: '2026-02-16',
-      contentUrl: 'https://splitflow.app/terms-of-service',
+      contentUrl: 'https://placeholder.investflow.example/terms-of-service',
     };
   }
 }

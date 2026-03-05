@@ -141,7 +141,7 @@ export default function SignUpScreen({ navigation, onLogin }) { // NOSONAR
 
                 Alert.alert(
                     'Account Created!',
-                    `Welcome to SplitFlow, ${name.split(' ')[0]}! Please login to continue.`,
+                    `Welcome to INVESTFLOW, ${name.split(' ')[0]}! Please login to continue.`,
                     [
                         {
                             text: "Login",
@@ -188,7 +188,7 @@ export default function SignUpScreen({ navigation, onLogin }) { // NOSONAR
 
                     <View style={styles.titleSection}>
                         <Text style={styles.title}>Create Account</Text>
-                        <Text style={styles.subtitle}>Join SplitFlow to manage project expenses</Text>
+                        <Text style={styles.subtitle}>Join INVESTFLOW to manage project expenses</Text>
                     </View>
 
                     {/* Form Card */}

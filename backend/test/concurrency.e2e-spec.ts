@@ -17,7 +17,7 @@ describe('Finance Vote Concurrency (e2e)', () => {
   let spendingId: string;
 
   const creatorUser = {
-    email: 'concurrency-creator-e2e@splitflow.com',
+    email: 'concurrency-creator-e2e@investflow.example',
     username: 'concurrency_creator_e2e',
     password: 'Password123!',
     name: 'Concurrency Creator',
@@ -26,7 +26,7 @@ describe('Finance Vote Concurrency (e2e)', () => {
   };
 
   const investorAUser = {
-    email: 'concurrency-investor-a-e2e@splitflow.com',
+    email: 'concurrency-investor-a-e2e@investflow.example',
     username: 'concurrency_investor_a_e2e',
     password: 'Password123!',
     name: 'Concurrency Investor A',
@@ -35,7 +35,7 @@ describe('Finance Vote Concurrency (e2e)', () => {
   };
 
   const investorBUser = {
-    email: 'concurrency-investor-b-e2e@splitflow.com',
+    email: 'concurrency-investor-b-e2e@investflow.example',
     username: 'concurrency_investor_b_e2e',
     password: 'Password123!',
     name: 'Concurrency Investor B',

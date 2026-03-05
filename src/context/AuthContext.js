@@ -4,14 +4,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ROLES, hasPermission, getAllPermissions, isProjectAdmin } from '../utils/permissions';
 import { updateFromBackendConfig } from '../utils/validationUtils';
 import { api } from '../services/api';
+import NotificationService from '../services/notificationService';
 
 // Create the Auth Context
 const AuthContext = createContext(null);
 
 // Storage keys
 const STORAGE_KEYS = {
-    HAS_LOGGED_IN_BEFORE: 'splitflow_has_logged_in_before',
-    SHOW_INFO_MODAL: 'splitflow_show_info_modal',
+    HAS_LOGGED_IN_BEFORE: 'INVESTFLOW_has_logged_in_before',
+    SHOW_INFO_MODAL: 'INVESTFLOW_show_info_modal',
 };
 
 /**
@@ -57,7 +58,7 @@ export function AuthProvider({ children }) {
     }, [markAsLoggedIn]);
 
     // Storage key for onboarding status (matches App.js)
-    const ONBOARDING_KEY_PREFIX = 'splitflow_onboarded_';
+    const ONBOARDING_KEY_PREFIX = 'INVESTFLOW_onboarded_';
 
     /**
      * Check onboarding status for user
@@ -98,6 +99,8 @@ export function AuthProvider({ children }) {
 
         setUser(loggedInUser);
         setIsAuthenticated(true);
+
+        NotificationService.initialize().catch(() => undefined);
 
         // Asynchronously fetch authoritative permissions and app config from backend (non-blocking)
         Promise.all([

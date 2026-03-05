@@ -55,7 +55,7 @@ if (!ip) {
 
 const apiUrl = `http://${ip}:3000`;
 const content = [
-  `SPLITFLOW_API_URL=${apiUrl}`,
+  `INVESTFLOW_API_URL=${apiUrl}`,
   `API_BASE_URL=${apiUrl}`,
   '',
 ].join('\n');

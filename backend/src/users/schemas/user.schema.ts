@@ -31,12 +31,6 @@ export class User {
   @Prop({ required: true, enum: UserRole, default: UserRole.GUEST })
   role: string;
 
-  @Prop({ default: false })
-  kycVerified: boolean;
-
-  @Prop({ type: Object })
-  kycData: Record<string, any>;
-
   @Prop({ type: Object }) // JSONB for bank details
   bankDetails: Record<string, any>;
 

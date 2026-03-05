@@ -25,6 +25,7 @@ import InvestorDashboard from './src/screens/investor/InvestorDashboard';
 import CreateProjectInvestorScreen from './src/screens/investor/CreateProjectInvestorScreen';
 import ManageProjectInvestorsScreen from './src/screens/investor/ManageProjectInvestorsScreen';
 import ProjectApprovalDetailScreen from './src/screens/investor/ProjectApprovalDetailScreen';
+import PendingApprovalDetailScreen from './src/screens/investor/PendingApprovalDetailScreen';
 import ProjectDetailScreen from './src/screens/investor/ProjectDetailScreen';
 
 // Expense Tracking Screens
@@ -165,6 +166,11 @@ function RootNavigator() {
             <Stack.Screen
               name="ProjectApprovalDetail"
               component={ProjectApprovalDetailScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="PendingApprovalDetail"
+              component={PendingApprovalDetailScreen}
               options={{ animation: 'slide_from_bottom' }}
             />
 

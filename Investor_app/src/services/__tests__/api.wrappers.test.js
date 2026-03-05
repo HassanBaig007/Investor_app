@@ -37,19 +37,14 @@ describe('api service wrapper coverage', () => {
 
     it('handles profile endpoints', async () => {
         mockAxios.get.mockResolvedValueOnce({ data: { id: 'u1' } });
-        mockAxios.put
-            .mockResolvedValueOnce({ data: { id: 'u1', name: 'Updated' } })
-            .mockResolvedValueOnce({ data: { pan: 'ABCDE1234F' } });
+        mockAxios.put.mockResolvedValueOnce({ data: { id: 'u1', name: 'Updated' } });
 
         const profile = await api.getProfile();
         const updated = await api.updateProfile({ name: 'Updated' });
-        const kyc = await api.updateKyc({ pan: 'ABCDE1234F' });
 
         expect(profile.id).toBe('u1');
         expect(updated.name).toBe('Updated');
-        expect(kyc.pan).toBe('ABCDE1234F');
-        expect(mockAxios.put).toHaveBeenNthCalledWith(1, '/users/profile', { name: 'Updated' });
-        expect(mockAxios.put).toHaveBeenNthCalledWith(2, '/users/kyc', { pan: 'ABCDE1234F' });
+        expect(mockAxios.put).toHaveBeenCalledWith('/users/profile', { name: 'Updated' });
     });
 
     it('normalizes spending list from getSpendings', async () => {

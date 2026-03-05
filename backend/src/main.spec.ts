@@ -110,7 +110,7 @@ describe('main bootstrap', () => {
 
     expect(mockApp.enableCors).toHaveBeenCalledWith(
       expect.objectContaining({
-        origin: ['https://splitflow.app'],
+        origin: ['https://placeholder.investflow.example'],
       }),
     );
   });
